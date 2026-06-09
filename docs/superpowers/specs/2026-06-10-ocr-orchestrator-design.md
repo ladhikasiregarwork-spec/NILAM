@@ -41,8 +41,11 @@ All are flat packages at the repo root, sharing `.env` / `.venv` /
 | `ocr_match` | 8400 | `matcher` module (imported) | slip↔Gaji per-month pairs (X+1 payroll-lag aware) |
 
 **Gaps that constrain this design:**
-- No extractor exists for `ktp` or `kk` (the classifier recognizes them, but
-  there is no parse service). They are recorded, not extracted, in v1.
+- `ktp` / `kk` are recognized by the classifier but **not extracted in v1**.
+  An existing KTP service (name / birth_date / nik) will be plugged in later;
+  for now the applicant **name** is derived from the other documents (§6/§7).
+  KK is recorded as a legality-upload flag (spouse verification is a later
+  development).
 - No fair-market-value service and no decision engine exist — out of scope.
 
 ---
@@ -62,6 +65,12 @@ All are flat packages at the repo root, sharing `.env` / `.venv` /
    services once each; **import** `ocr_match`'s pure matcher rather than calling
    it over HTTP, to avoid re-parsing the slip and mutasi PDFs a second time
    (the mutasi LLM parse alone is ~29s).
+7. **Identity docs:** `ktp` / `kk` are not extracted in v1. The applicant
+   **name** is resolved from the already-extracted documents (slip → mutasi →
+   sk). KTP's `birth_date` / `age` / `nik` are reserved `null` fields a
+   follow-on fills by plugging in the existing KTP service; `kk` is recorded as
+   a legality-upload flag and will drive spouse verification in a later
+   development.
 
 ---
 
@@ -174,14 +183,19 @@ The background task runs five stages, updating `job.stages[]` as it progresses.
 `document_type`:
 
 ```
-slips[]   mutasi[]   sk[]   identity[](ktp|kk)   unknown[]
+slips[]   mutasi[]   sk[]   ktp[]   kk[]   unknown[]
 ```
 
 ### Stage 2 — Extract (the three extractor calls run concurrently, once each)
 - `slips[]` → `ocr_slip` `/parse`
 - `mutasi[]` → `ocr_mutasi` `/api/v1/mutations/extract-batch`
 - `sk[]` → `ocr_sk` `/parse`
-- `identity[]` (ktp/kk) → **no extractor**; recorded as `recognized_not_extracted`
+- `ktp[]` → **not extracted in v1**; recorded as `recognized_not_extracted`. The
+  applicant name is resolved from the other documents in Stage 5; the existing
+  KTP service (name / birth_date / nik) is a follow-on plug-in.
+- `kk[]` → **not extracted in v1**; recorded as `recognized_not_extracted`. Its
+  presence satisfies the legality-upload requirement (visible in `documents[]`);
+  KK-based spouse verification is a later development.
 - `unknown[]` → recorded with a warning (possible mis-upload)
 
 ### Stage 3 — Verify
@@ -205,6 +219,13 @@ verify, aggregate); assembly is the job's completion step.
       "extracted": { /* the service's own output for this doc, or null */ } }
     // one entry per uploaded file
   ],
+  "applicant": {
+    "name": "BUDI SANTOSO",   // resolved from available docs (precedence below)
+    "name_source": "slip",    // "slip" | "mutasi" | "sk" | null
+    "birth_date": null,       // reserved — KTP service fills this (follow-on)
+    "age": null,              // reserved — derived from birth_date
+    "nik": null               // reserved — KTP service fills this (follow-on)
+  },
   "income": { /* §7 breakdown */ },
   "verification": { "matched_pairs": [ /* from ocr_match */ ], "verified_month_count": 12 },
   "audit": {
@@ -218,6 +239,12 @@ verify, aggregate); assembly is the job's completion step.
 
 The response keeps **both** the per-document extraction detail and the rolled-up
 income — nothing the services produced is discarded.
+
+**Applicant name resolution:** `name` is taken from the first available of slip
+`worker_name` → mutasi account `nama` → sk worker name (KTP would rank highest
+once its service is wired). `name_source` records which one fired; `name` is
+`null` with a warning if none is available. `birth_date` / `age` / `nik` stay
+`null` in v1.
 
 ---
 
@@ -327,7 +354,9 @@ Mirrors the repo's "test the pure logic" instinct.
   check) when the decision engine is specced.
 - Frontend wiring (`nilam-prototype` is fully mocked today).
 - Joint applicant (nasabah + pasangan) income.
-- `ktp` / `kk` extraction.
+- KTP service integration (`name` / `birth_date` / `age` / `nik`) — v1 derives
+  the applicant name from other documents and leaves the rest `null`.
+- KK extraction and KK-based spouse verification.
 - Persistence, auth, rate limiting, multi-worker job storage.
 
 ---
@@ -343,5 +372,8 @@ Mirrors the repo's "test the pure logic" instinct.
 - A bundle with a slip but no mutasi yields `basis: "slip_fallback"`; an empty
   bundle yields `basis: "none"` with `monthly_qualifying_income: null` — neither
   errors the job.
+- `applicant.name` is populated from the available documents (slip → mutasi →
+  sk), with `birth_date` / `age` / `nik` reserved as `null` for the KTP
+  follow-on.
 - A downed extractor degrades to a partial result with the failure in
   `audit.extractor_errors`, not a failed job.
