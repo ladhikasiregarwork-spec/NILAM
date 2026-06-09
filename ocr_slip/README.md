@@ -62,9 +62,10 @@ Then run:
 python3 salary_slip_parser.py --input input --output output --config config.json
 ```
 
-If a PDF is scanned and has no text layer, the script renders it with
-`pypdfium2` and uses Apple Vision OCR on macOS. OCR results include a confidence
-note such as `OCR fallback used via Apple Vision.`
+If a PDF is scanned / has a weak text layer, the parser falls back to the
+shared **PaddleOCR service** (via `ocr_common.paddle_ocr`, configured by
+`OCR_ENDPOINT_URL` / `OCR_API_KEY` in the root `.env`) — the same OCR backend
+every service uses. OCR results are tagged `extraction_method: ocr_paddle`.
 
 See `WORKFLOW.md` for the optimized extraction flowchart and fallback strategy.
 
@@ -94,8 +95,16 @@ PORT=5051 python3 web_app.py
 
 ## Local FastAPI Service
 
-`ocr_slip` is a package — run it from the **repo root** (where the shared
-`.venv` and `.env` live), on port 8200:
+Easiest — use the bundled `run_api.sh` (resolves the repo root, uses the shared
+`.venv`, binds port 8200; run from anywhere, extra flags pass through):
+
+```bash
+./ocr_slip/run_api.sh            # start on :8200
+./ocr_slip/run_api.sh --reload   # dev auto-reload
+```
+
+Or run uvicorn directly, from the **repo root** (it's a package, importable only
+from the root):
 
 ```bash
 .venv/bin/uvicorn ocr_slip.app:app --host 0.0.0.0 --port 8200 --reload

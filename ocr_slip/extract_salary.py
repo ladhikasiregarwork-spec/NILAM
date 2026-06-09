@@ -3,7 +3,7 @@
 
 Flow:
 1. Parse the PDF text layer with pypdfium2 rules from extract_parser.py.
-2. If required values are missing, extract text with local Tesseract OCR.
+2. If required values are missing, OCR the PDF via the shared PaddleOCR service (ocr_common).
 3. If required values or semantic keywords are still missing, use LLM
    text-only matching to map similar labels into fixed fields.
 4. Write one extracted JSON and one summary JSON per PDF.
@@ -195,6 +195,25 @@ class NonSalarySlipError(RuntimeError):
         self.classification = classification
 
 
+class OcrUnavailableError(RuntimeError):
+    """Raised when a scanned slip needs OCR but the OCR service failed or
+    returned no text. Distinct from NonSalarySlipError so the user isn't told a
+    real slip 'is not a salary slip' when the actual problem is OCR."""
+
+    def __init__(self, source_file: str, detail: str) -> None:
+        super().__init__(
+            f"Could not read '{source_file}': it has no usable text layer and "
+            f"OCR did not return text ({detail}). Check the OCR service and retry."
+        )
+        self.source_file = source_file
+        self.detail = detail
+
+
+def _ocr_text_is_empty(extracted: dict[str, Any]) -> bool:
+    """True when OCR produced effectively no text across all pages."""
+    return not "".join(p.get("text", "") for p in extracted.get("pages", [])).strip()
+
+
 class PdfPasswordProvider:
     """Prompt for protected PDFs and reuse successful passwords during one run."""
 
@@ -203,9 +222,11 @@ class PdfPasswordProvider:
         initial_password: str | None = None,
         max_attempts: int = 3,
         allow_prompt: bool = True,
+        ocr_mode: str = "auto",
     ) -> None:
         self.max_attempts = max_attempts
         self.allow_prompt = allow_prompt
+        self.ocr_mode = ocr_mode
         self._known_passwords: list[str | None] = [None]
         if initial_password:
             self._known_passwords.append(initial_password)
@@ -213,7 +234,7 @@ class PdfPasswordProvider:
     def parse_with_prompt(self, pdf_path: Path) -> dict[str, Any]:
         for password in self._known_passwords:
             try:
-                return parse_pdf(pdf_path, password=password)
+                return parse_pdf(pdf_path, password=password, ocr_mode=self.ocr_mode)
             except PdfPasswordError:
                 continue
 
@@ -239,7 +260,7 @@ class PdfPasswordProvider:
             if not password:
                 continue
             try:
-                result = parse_pdf(pdf_path, password=password)
+                result = parse_pdf(pdf_path, password=password, ocr_mode=self.ocr_mode)
             except PdfPasswordError:
                 print(f"Incorrect password for {pdf_path.name}.")
                 continue
@@ -710,7 +731,7 @@ def should_use_ocr(
 
 
 def should_use_llm_text(extracted: dict[str, Any], documents: list[dict[str, Any]]) -> bool:
-    if extracted.get("extraction_method") == "ocr_tesseract":
+    if extracted.get("extraction_method") == "ocr_paddle":
         return True
     if any(missing_required_value(document) for document in documents):
         return True
@@ -765,15 +786,15 @@ def parse_extracted_with_rules(extracted: dict[str, Any], original_name: str, co
     return {"extracted": extracted, "summary": summaries, "documents": documents}
 
 
-def parse_with_local_ocr(
+def parse_with_ocr(
     pdf_path: Path,
     original_name: str,
     config: ParserConfig,
     password: str | None = None,
 ) -> dict[str, Any]:
-    from .extract_ocr import TesseractOcrExtractor
+    from ocr_common.paddle_ocr import extract_pages
 
-    extracted = TesseractOcrExtractor().extract(pdf_path, password=password)
+    extracted = extract_pages(pdf_path, password=password)
     return parse_extracted_with_rules(extracted, original_name, config)
 
 
@@ -820,14 +841,21 @@ def parse_with_llm_text(
     }
 
 
-def parse_pdf(pdf_path: Path, password: str | None = None) -> dict[str, Any]:
+def parse_pdf(pdf_path: Path, password: str | None = None, ocr_mode: str = "auto") -> dict[str, Any]:
     config = ParserConfig()
     original_name = pdf_path.name
     rule_result = parse_with_rules(pdf_path, original_name, config, password=password)
     rule_document = rule_result["documents"][0]
     rule_classification = classify_salary_slip(rule_result["extracted"])
     text_weak = text_quality_needs_ocr(rule_result["extracted"], config)
-    needs_ocr = should_use_ocr(rule_result["extracted"], rule_document, config)
+    # OCR fallback mode: "never" = text layer only, "always" = force the
+    # PaddleOCR fallback, "auto" = let the text-quality heuristic decide.
+    if ocr_mode == "never":
+        needs_ocr = False
+    elif ocr_mode == "always":
+        needs_ocr = True
+    else:
+        needs_ocr = should_use_ocr(rule_result["extracted"], rule_document, config)
 
     if rule_classification["status"] == "rejected" and not text_weak:
         raise NonSalarySlipError(original_name, rule_classification)
@@ -836,18 +864,22 @@ def parse_pdf(pdf_path: Path, password: str | None = None) -> dict[str, Any]:
         return attach_classification(rule_result, rule_classification)
 
     try:
-        ocr_result = parse_with_local_ocr(pdf_path, original_name, config, password=password)
+        ocr_result = parse_with_ocr(pdf_path, original_name, config, password=password)
     except PdfPasswordError:
         raise
     except Exception as exc:
-        rule_document["confidence_notes"].append(f"Local OCR fallback failed: {exc}")
+        rule_document["confidence_notes"].append(f"OCR fallback failed: {exc}")
         if rule_classification["status"] == "rejected":
-            raise NonSalarySlipError(original_name, rule_classification)
+            # Text layer too weak to classify on its own and OCR failed — this
+            # is an OCR problem, not a 'not a salary slip' verdict.
+            raise OcrUnavailableError(original_name, str(exc)) from exc
         return attach_classification(rule_result, rule_classification)
 
     ocr_classification = classify_salary_slip(ocr_result["extracted"])
     if ocr_classification["status"] == "rejected":
         if rule_classification["status"] == "rejected":
+            if _ocr_text_is_empty(ocr_result["extracted"]):
+                raise OcrUnavailableError(original_name, "the OCR service returned no readable text")
             raise NonSalarySlipError(original_name, ocr_classification)
         return attach_classification(rule_result, rule_classification)
 
@@ -868,6 +900,7 @@ def parse_upload(
     output_path: Path,
     password: str | None = None,
     allow_password_prompt: bool = True,
+    ocr_mode: str = "auto",
 ) -> dict[str, Any]:
     if not input_path.is_absolute():
         cwd_input_path = input_path
@@ -887,6 +920,7 @@ def parse_upload(
     password_provider = PdfPasswordProvider(
         initial_password=password,
         allow_prompt=allow_password_prompt,
+        ocr_mode=ocr_mode,
     )
 
     for pdf_path in pdfs:

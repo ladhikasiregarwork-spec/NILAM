@@ -168,7 +168,7 @@ Return this JSON object:
 Rules:
 - total_paid = final amount received. Similar labels: TOTAL DITERIMA, diterima karyawan, bank transfer, take home pay, net pay. If final amount is unreadable or missing, use Total Penghasilan Bruto / Bruto minus deduction.
 - pokok = base/main compensation only. Similar labels: Gaji, Gaji Pokok, Upah Pokok. If multiple Gaji rows exist and there is no separate allowance/bonus amount, sum the Gaji rows as pokok.
-- incentive = positive additions beside pokok, such as THR, bonus, tunjangan, allowance, overtime, meal/transport additions.
+- incentive = positive additions beside pokok that show their OWN explicit amount, such as THR, bonus, tunjangan, allowance, overtime. A blank or "-" allowance row is 0. Do NOT infer an incentive from the gap between totals; if the Gaji rows already sum to the gross total, incentive is 0.
 - deduction = all decreases combined into one number, including PPh/pajak/tax and any other deduction.
 - Use existing parser values when they are already correct.
 - If the text says a deduction row is blank or "-", count it as 0.
@@ -250,11 +250,22 @@ def postprocess_from_text(doc: dict[str, Any], page_text: str) -> None:
         doc["pokok"] = sum(gaji_values)
 
     incentive_values = amounts_from_lines(page_text, ("tunjangan", "bonus", "thr", "lembur", "penerimaan lainnya"))
-    if incentive_values:
-        doc["incentive"] = sum(incentive_values)
-    elif bruto and gaji_values:
-        doc["pokok"] = bruto if abs(sum(gaji_values) - bruto) <= 10000 else sum(gaji_values)
-        doc["incentive"] = 0
+    incentive_candidate = sum(incentive_values) if incentive_values else 0
+    if bruto is not None:
+        pokok = doc.get("pokok") or 0
+        room = bruto - pokok
+        if incentive_candidate > 0 and room > 10000:
+            # A real allowance row exists and the gross leaves room for it.
+            doc["incentive"] = min(incentive_candidate, room)
+        else:
+            # No genuine allowance → all gross income is base salary, so pokok
+            # is the gross total. This also recovers a Gaji row whose "Gaji"
+            # label the OCR garbled (otherwise pokok undercounts and wouldn't
+            # match take-home), and avoids a phantom incentive from OCR noise.
+            doc["incentive"] = 0
+            doc["pokok"] = bruto
+    else:
+        doc["incentive"] = incentive_candidate
 
     institution = institution_from_text(page_text)
     current_institution = str(doc.get("institution_name") or "")

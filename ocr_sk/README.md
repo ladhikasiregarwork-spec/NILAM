@@ -6,8 +6,8 @@ certificate / appointment letter) PDFs into structured JSON. Vendored from
 and adapted to the monorepo's layout.
 
 Pipeline: deterministic `pypdfium2` text extraction → rule-based classifier →
-Tesseract OCR fallback for scanned PDFs → optional LLM text fallback for
-missing fields.
+**PaddleOCR-service** fallback for scanned PDFs (shared `ocr_common` client) →
+optional LLM text fallback for missing fields.
 
 It is a sibling of `ocr_mutasi` (8300), `ocr_slip` (8200), `ocr_match` (8400),
 and `ocr_classifier` (8000), and runs on **port 8100**. It shares the repo-root
@@ -16,14 +16,24 @@ shared `AZURE_OPENAI_*` keys).
 
 ## Run
 
-Run from the **repo root** (where the shared `.venv` and `.env` live), not from
-inside `ocr_sk/` — it's a package, importable only from the root:
+Easiest — use the bundled `run_api.sh`. It resolves the repo root, uses the
+shared `.venv`, and binds the right port; run it from anywhere and extra flags
+pass through:
+
+```bash
+./ocr_sk/run_api.sh            # start on :8100
+./ocr_sk/run_api.sh --reload   # dev auto-reload
+PORT=9000 ./ocr_sk/run_api.sh  # override via HOST=/PORT=
+```
+
+Or run uvicorn directly, **from the repo root** (it's a package, importable only
+from the root):
 
 ```bash
 .venv/bin/uvicorn ocr_sk.app:app --host 0.0.0.0 --port 8100 --reload
 ```
 
-- Browser upload page: <http://localhost:8100/web> (the bare URL redirects here)
+- Browser upload page: <http://localhost:8100/upload> (the bare URL redirects here; `/web` is a legacy alias)
 - Swagger UI: <http://localhost:8100/docs>
 
 ## Endpoints
@@ -32,8 +42,8 @@ inside `ocr_sk/` — it's a package, importable only from the root:
 |---|---|---|---|
 | POST | `/parse` | multipart `files` (one or more PDFs) + optional `password` | `{ ok, needs_password, uploaded_files, summary, extracted, output_files }` |
 | GET | `/health` | — | `{ status, parser_folder }` |
-| GET | `/web` | — | the drag-and-drop upload UI (`web-ui/index.html`) |
-| GET | `/` | — | redirect to `/web` |
+| GET | `/upload` | — | the drag-and-drop upload UI (`web-ui/index.html`); `/web` is a legacy alias |
+| GET | `/` | — | redirect to `/upload` |
 
 ```bash
 curl -s -F "files=@/path/to/surat-keterangan-kerja.pdf" \
@@ -58,15 +68,10 @@ Reuses the shared `AZURE_OPENAI_*` keys. Optional tunables (defaults shown):
 ```
 # LLM text fallback for missing fields
 KETERANGAN_KERJA_FALLBACK=true
-
-# Tesseract OCR (shared with ocr_slip)
-OCR_LANGUAGE=ind+eng
-OCR_SCALE=3.0
-OCR_PSM=6
-OCR_OEM=1
-OCR_BINARIZE=true
 ```
 
-The OCR path uses the Indonesian Tesseract language data (`ind`); install it
-(`brew install tesseract-lang`) for best accuracy. It degrades to English if
-`ind` is not present.
+When the text layer is too weak, the parser falls back to the shared
+**PaddleOCR service** (configured by `OCR_ENDPOINT_URL` / `OCR_API_KEY` in the
+root `.env`) via `ocr_common.paddle_ocr` — the same OCR backend every service
+uses. No local OCR engine is required.
+
