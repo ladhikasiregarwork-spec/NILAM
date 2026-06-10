@@ -34,6 +34,31 @@ class ApplicantInfo(BaseModel):
     nik: Optional[str] = None          # reserved — KTP service (follow-on)
 
 
+class MonthlyIncomeRow(BaseModel):
+    """One calendar month of income, joined from bank credits + a salary slip.
+
+    Bank-first (spec §3): bank credits are the source of truth for the income
+    amounts; the matched slip supplies ``deduction``/``total_paid``.
+
+    NOTE: ``bonus_non_fixed`` intentionally includes bank ``Insentif`` (spec §3,
+    decision 4). This differs from the aggregate ``IncomeBreakdown``, which counts
+    Insentif AS salary (``avg_monthly(Gaji + Insentif)``). The two views serve
+    different purposes and are allowed to diverge — do not "fix" this.
+
+    ``null`` means "no data source for this field"; ``0`` means "a source covered
+    it and the amount was zero" (e.g. a normal no-THR month on a bank row shows
+    ``thr == 0``, not ``null``).
+    """
+    month: str                              # "YYYY-MM" — the "month payment" key
+    fixed_routine_income: Optional[float]   # bank Gaji   (slip pokok if slip_only)
+    thr: Optional[float]                    # bank THR    (null if slip_only)
+    bonus_non_fixed: Optional[float]        # bank Bonus + Insentif (slip incentive if slip_only)
+    deduction: Optional[float]              # slip only
+    total_paid: Optional[float]             # slip only
+    bank_salary_credit: Optional[float]     # bank Gaji credit amount (null if slip_only)
+    source: RowSource
+
+
 class IncomeBreakdown(BaseModel):
     """The §7 monthly qualifying-income breakdown."""
     n_statement_months: int
@@ -46,18 +71,7 @@ class IncomeBreakdown(BaseModel):
     basis: IncomeBasis
     verified_month_count: int
     warnings: list[str] = Field(default_factory=list)
-
-
-class MonthlyIncomeRow(BaseModel):
-    """One row in the per-month income breakdown table (spec §6)."""
-    month: str                                  # YYYY-MM
-    fixed_routine_income: float                 # Gaji from bank, or slip pokok
-    thr: Optional[float]                        # None when source is slip_only
-    bonus_non_fixed: float                      # Bonus + Insentif
-    deduction: Optional[float]                  # None when no slip available
-    total_paid: Optional[float]                 # None when no slip available
-    bank_salary_credit: Optional[float]         # None when source is slip_only
-    source: RowSource
+    monthly_breakdown: list[MonthlyIncomeRow] = Field(default_factory=list)
 
 
 class VerificationInfo(BaseModel):
