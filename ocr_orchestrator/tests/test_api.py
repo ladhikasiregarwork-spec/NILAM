@@ -55,6 +55,7 @@ class TestApi(unittest.TestCase):
                           {"pending", "running", "completed", "failed"})
 
     def test_invalid_loan_amount_is_400(self):
+        # validation fires before job creation — no upstream mock needed
         r = self.client.post(
             "/api/v1/applications",
             files=[("files", ("x.pdf", b"%PDF-1.4 fake", "application/pdf"))],
@@ -63,10 +64,19 @@ class TestApi(unittest.TestCase):
         self.assertEqual(r.status_code, 400)
 
     def test_invalid_tenor_is_400(self):
+        # validation fires before job creation — no upstream mock needed
         r = self.client.post(
             "/api/v1/applications",
             files=[("files", ("x.pdf", b"%PDF-1.4 fake", "application/pdf"))],
             data={"tenor_months": "0"},
+        )
+        self.assertEqual(r.status_code, 400)
+
+    def test_invalid_appraisal_month_is_400(self):
+        r = self.client.post(
+            "/api/v1/applications",
+            files=[("files", ("x.pdf", b"%PDF-1.4 fake", "application/pdf"))],
+            data={"appraisal_month": "999"},
         )
         self.assertEqual(r.status_code, 400)
 

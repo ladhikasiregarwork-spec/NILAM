@@ -95,22 +95,39 @@ def _validate_numeric(name: str, value: float | None, *, allow_zero: bool) -> No
         raise HTTPException(status_code=400, detail=f"{name} must be > 0.")
 
 
-def _build_collateral(luas_tanah, luas_bangunan, kode_pos, kelurahan,
-                      appraisal_month, warnings: list[str]) -> CollateralInput | None:
-    fields = (luas_tanah, luas_bangunan, kode_pos, kelurahan, appraisal_month)
+def _validate_appraisal_month(value: int | None) -> None:
+    """Reject an appraisal_month that is not a plausible YYYYMM."""
+    if value is None:
+        return
+    year, month = divmod(value, 100)
+    if not (1900 <= year <= 2100 and 1 <= month <= 12):
+        raise HTTPException(
+            status_code=400,
+            detail="appraisal_month must be YYYYMM (e.g. 202606).",
+        )
+
+
+def _build_collateral(
+    luas_tanah: float | None, luas_bangunan: float | None,
+    kode_pos: str | None, kelurahan: str | None,
+    appraisal_month: int | None, warnings: list[str],
+) -> CollateralInput | None:
     if luas_tanah is not None and luas_bangunan is not None:
         return CollateralInput(
             luas_tanah=luas_tanah, luas_bangunan=luas_bangunan,
             kode_pos=kode_pos, kelurahan=kelurahan, appraisal_month=appraisal_month,
         )
-    if any(v is not None for v in fields):
+    if any(v is not None for v in
+           (luas_tanah, luas_bangunan, kode_pos, kelurahan, appraisal_month)):
         warnings.append("Partial collateral fields provided (need both luas_tanah "
                         "and luas_bangunan); FMV skipped.")
     return None
 
 
-def _build_loan(loan_amount, tenor_months, annual_interest_rate,
-                warnings: list[str]) -> LoanRequest | None:
+def _build_loan(
+    loan_amount: float | None, tenor_months: int | None,
+    annual_interest_rate: float | None, warnings: list[str],
+) -> LoanRequest | None:
     fields = (loan_amount, tenor_months, annual_interest_rate)
     if all(v is not None for v in fields):
         return LoanRequest(loan_amount=loan_amount, tenor_months=tenor_months,
@@ -170,6 +187,7 @@ async def create_application(
     _validate_numeric("loan_amount", loan_amount, allow_zero=False)
     _validate_numeric("tenor_months", tenor_months, allow_zero=False)
     _validate_numeric("annual_interest_rate", annual_interest_rate, allow_zero=True)
+    _validate_appraisal_month(appraisal_month)
 
     input_warnings: list[str] = []
     collateral = _build_collateral(luas_tanah, luas_bangunan, kode_pos, kelurahan,
