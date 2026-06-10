@@ -11,6 +11,9 @@ from .models import DocumentResult
 
 Pdf = tuple[str, bytes]
 
+_EXTRACTED = frozenset({"slip", "mutasi", "sk"})
+_RECOGNIZED = frozenset({"ktp", "kk"})
+
 
 @dataclass
 class Buckets:
@@ -34,15 +37,14 @@ def route_documents(
         files: the original ``(filename, bytes)`` uploads.
 
     Returns:
-        (buckets, document_results, warnings). One DocumentResult per file.
+        (buckets, document_results, warnings). One DocumentResult per
+        classification entry (normally 1:1 with uploaded files; a file absent
+        from ``classifications`` would not appear).
     """
     by_name: dict[str, bytes] = {name: data for name, data in files}
     buckets = Buckets()
     docs: list[DocumentResult] = []
     warnings: list[str] = []
-
-    _extracted = {"slip", "mutasi", "sk"}
-    _recognized = {"ktp", "kk"}
 
     for c in classifications:
         filename = c.get("filename", "")
@@ -63,9 +65,9 @@ def route_documents(
         else:
             buckets.unknown.append(pair)
 
-        if doc_type in _extracted:
+        if doc_type in _EXTRACTED:
             status = "extracted"
-        elif doc_type in _recognized:
+        elif doc_type in _RECOGNIZED:
             status = "recognized_not_extracted"
         else:
             status = "unclassified"

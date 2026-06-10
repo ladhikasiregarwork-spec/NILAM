@@ -24,6 +24,9 @@ class TestRouteDocuments(unittest.TestCase):
         self.assertEqual([n for n, _ in buckets.slips], ["slip1.pdf"])
         self.assertEqual([n for n, _ in buckets.mutasi], ["mut1.pdf"])
         self.assertEqual([n for n, _ in buckets.sk], ["sk1.pdf"])
+        self.assertEqual([n for n, _ in buckets.ktp], ["ktp1.pdf"])
+        self.assertEqual([n for n, _ in buckets.kk], ["kk1.pdf"])
+        self.assertEqual([n for n, _ in buckets.unknown], ["weird.pdf"])
 
     def test_document_status_mapping(self):
         _, docs, _ = route_documents(self.classifications, self.files)
