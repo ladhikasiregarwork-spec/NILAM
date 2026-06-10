@@ -130,6 +130,100 @@ class TestRunJob(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(job.status, "failed")
         self.assertIn("internal error", job.error)
 
+    async def _bank_verified_setup(self):
+        from ocr_orchestrator.models import CollateralInput, LoanRequest
+        files = [("slip_mar.pdf", b"a"), ("mut.pdf", b"b")]
+        classify = _async([
+            {"filename": "slip_mar.pdf", "document_type": "slip", "confidence": "high"},
+            {"filename": "mut.pdf", "document_type": "mutasi", "confidence": "high"},
+        ])
+        mutasi = _async({
+            "files": [{"filename": "mut.pdf", "account": {"nama": "BUDI"}}],
+            "credits": [{"source_file": "mut.pdf", "tanggal": "2025-03-25",
+                         "keterangan": "GAJI", "amount": 20_000_000.0, "page": 1,
+                         "category": "Gaji"}],
+            "audit": {},
+        })
+        slips = _async([{"source_file": "slip_mar.pdf", "worker_name": "BUDI",
+                         "total_paid": 20_000_000.0, "period": "2025-03"}])
+        sk = _async({"summary": {}})
+        collateral = CollateralInput(luas_tanah=80.0, luas_bangunan=50.0)
+        loan = LoanRequest(loan_amount=700_000_000, tenor_months=240,
+                           annual_interest_rate=0.10)
+        return files, classify, mutasi, slips, sk, collateral, loan
+
+    async def test_fmv_and_decide_run_when_inputs_present(self):
+        files, classify, mutasi, slips, sk, collateral, loan = \
+            await self._bank_verified_setup()
+        fmv = _async({"land_value": 600_000_000, "building_value": 400_000_000,
+                      "fair_value": 1_000_000_000, "location_matched": True,
+                      "backend": "linear", "warnings": []})
+        store = JobStore(retention=10)
+        job = await store.create()
+        with mock.patch.object(pipeline.upstream, "classify_documents", classify), \
+             mock.patch.object(pipeline.upstream, "parse_slips", slips), \
+             mock.patch.object(pipeline.upstream, "extract_mutations", mutasi), \
+             mock.patch.object(pipeline.upstream, "parse_sk", sk), \
+             mock.patch.object(pipeline.upstream, "predict_fair_value", fmv):
+            await pipeline.run_job(store, job.id, files, bonus_accept_pct=0.0,
+                                   password=None, collateral=collateral, loan=loan)
+        self.assertEqual(job.status, "completed")
+        self.assertEqual(job.result.fmv.fair_value, 1_000_000_000)
+        self.assertEqual(job.result.decision.recommendation, "eligible")
+        self.assertTrue(job.result.decision.ltv.passed)
+        fmv_stage = next(s for s in job.stages if s.name == "fmv")
+        decide_stage = next(s for s in job.stages if s.name == "decide")
+        self.assertEqual(fmv_stage.status, "completed")
+        self.assertEqual(decide_stage.status, "completed")
+
+    async def test_stages_skipped_when_no_collateral_or_loan(self):
+        files, classify, mutasi, slips, sk, _c, _l = await self._bank_verified_setup()
+        store = JobStore(retention=10)
+        job = await store.create()
+        with mock.patch.object(pipeline.upstream, "classify_documents", classify), \
+             mock.patch.object(pipeline.upstream, "parse_slips", slips), \
+             mock.patch.object(pipeline.upstream, "extract_mutations", mutasi), \
+             mock.patch.object(pipeline.upstream, "parse_sk", sk):
+            await pipeline.run_job(store, job.id, files, bonus_accept_pct=0.0,
+                                   password=None)
+        self.assertEqual(job.status, "completed")
+        self.assertIsNone(job.result.fmv)
+        self.assertIsNone(job.result.decision)
+        self.assertEqual(next(s for s in job.stages if s.name == "fmv").status, "skipped")
+        self.assertEqual(next(s for s in job.stages if s.name == "decide").status, "skipped")
+
+    async def test_fmv_down_degrades_to_refer(self):
+        from ocr_orchestrator.upstream import UpstreamUnreachableError
+        files, classify, mutasi, slips, sk, collateral, loan = \
+            await self._bank_verified_setup()
+        store = JobStore(retention=10)
+        job = await store.create()
+        with mock.patch.object(pipeline.upstream, "classify_documents", classify), \
+             mock.patch.object(pipeline.upstream, "parse_slips", slips), \
+             mock.patch.object(pipeline.upstream, "extract_mutations", mutasi), \
+             mock.patch.object(pipeline.upstream, "parse_sk", sk), \
+             mock.patch.object(pipeline.upstream, "predict_fair_value",
+                               _async_raise(UpstreamUnreachableError("fmv down"))):
+            await pipeline.run_job(store, job.id, files, bonus_accept_pct=0.0,
+                                   password=None, collateral=collateral, loan=loan)
+        self.assertEqual(job.status, "completed")
+        self.assertIsNone(job.result.fmv)
+        self.assertEqual(job.result.decision.recommendation, "refer_to_analyst")
+        self.assertTrue(job.result.audit.fmv_errors)
+        self.assertEqual(next(s for s in job.stages if s.name == "fmv").status, "failed")
+
+    async def test_input_warnings_land_in_audit(self):
+        files, classify, mutasi, slips, sk, _c, _l = await self._bank_verified_setup()
+        store = JobStore(retention=10)
+        job = await store.create()
+        with mock.patch.object(pipeline.upstream, "classify_documents", classify), \
+             mock.patch.object(pipeline.upstream, "parse_slips", slips), \
+             mock.patch.object(pipeline.upstream, "extract_mutations", mutasi), \
+             mock.patch.object(pipeline.upstream, "parse_sk", sk):
+            await pipeline.run_job(store, job.id, files, bonus_accept_pct=0.0,
+                                   password=None, input_warnings=["partial loan ignored"])
+        self.assertIn("partial loan ignored", job.result.audit.warnings)
+
 
 if __name__ == "__main__":
     unittest.main()

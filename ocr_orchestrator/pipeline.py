@@ -12,6 +12,8 @@ import time
 from typing import Any
 
 from . import upstream
+from .config import get_settings
+from .decision import decide
 from .identity import resolve_applicant_name
 from .income import compute_income
 from .jobs import JobStore
@@ -19,6 +21,9 @@ from .monthly import build_monthly_breakdown
 from .models import (
     ApplicantInfo,
     ApplicationResult,
+    CollateralInput,
+    FmvResult,
+    LoanRequest,
     OrchestratorAudit,
     VerificationInfo,
 )
@@ -58,6 +63,9 @@ async def run_job(
     *,
     bonus_accept_pct: float,
     password: str | None,
+    collateral: CollateralInput | None = None,
+    loan: LoanRequest | None = None,
+    input_warnings: list[str] | None = None,
 ) -> None:
     """Run the pipeline, guaranteeing the job ends ``completed`` or ``failed``.
 
@@ -70,6 +78,7 @@ async def run_job(
         await _execute(
             store, job_id, files,
             bonus_accept_pct=bonus_accept_pct, password=password,
+            collateral=collateral, loan=loan, input_warnings=input_warnings,
         )
     except Exception as exc:  # backstop — pipeline stages are mostly pure
         logger.exception("run_job crashed for job %s", job_id)
@@ -83,10 +92,15 @@ async def _execute(
     *,
     bonus_accept_pct: float,
     password: str | None,
+    collateral: CollateralInput | None = None,
+    loan: LoanRequest | None = None,
+    input_warnings: list[str] | None = None,
 ) -> None:
     """Run the whole pipeline for one job, mutating job state in ``store``."""
     timings: dict[str, float] = {}
     audit = OrchestratorAudit()
+    if input_warnings:
+        audit.warnings.extend(input_warnings)
     await store.set_status(job_id, "running")
 
     # ---- Stage 1: classify -------------------------------------------------
@@ -198,7 +212,45 @@ async def _execute(
     timings["aggregate"] = (time.perf_counter() - t0) * 1000
     await store.set_stage(job_id, "aggregate", "completed")
 
-    # ---- Stage 5: assemble -------------------------------------------------
+    # ---- Stage 5: fmv ------------------------------------------------------
+    fmv_result: FmvResult | None = None
+    if collateral is None:
+        await store.set_stage(job_id, "fmv", "skipped")
+        audit.warnings.append("No collateral provided; FMV skipped.")
+    else:
+        await store.set_stage(job_id, "fmv", "running")
+        t0 = time.perf_counter()
+        try:
+            raw = await upstream.predict_fair_value(collateral.model_dump())
+            fmv_result = FmvResult(**raw)
+            await store.set_stage(job_id, "fmv", "completed")
+        except Exception as exc:  # unreachable/http/bad-payload — degrade, don't fail
+            logger.warning("fmv stage failed: %s", exc)
+            audit.fmv_errors.append(f"house_fair_market_value: {exc}")
+            await store.set_stage(job_id, "fmv", "failed", str(exc))
+        timings["fmv"] = (time.perf_counter() - t0) * 1000
+
+    # ---- Stage 6: decide ---------------------------------------------------
+    decision_result = None
+    if loan is None:
+        await store.set_stage(job_id, "decide", "skipped")
+        audit.warnings.append("No loan request provided; decision skipped.")
+    else:
+        await store.set_stage(job_id, "decide", "running")
+        t0 = time.perf_counter()
+        settings = get_settings()
+        decision_result = decide(
+            income=income,
+            fmv=fmv_result,
+            loan=loan,
+            max_ltv=settings.max_ltv,
+            max_dsr=settings.max_dsr,
+            existing_installment=settings.default_existing_installment,
+        )
+        timings["decide"] = (time.perf_counter() - t0) * 1000
+        await store.set_stage(job_id, "decide", "completed")
+
+    # ---- Stage 7: assemble -------------------------------------------------
     mutasi_accounts = [f.get("account", {}) for f in mut_files]
     name, name_source = resolve_applicant_name(
         slip_docs, mutasi_accounts, [sk_response] if sk_response else []
@@ -210,6 +262,10 @@ async def _execute(
         applicant=ApplicantInfo(name=name, name_source=name_source),
         income=income,
         verification=verification,
+        collateral=collateral,
+        loan=loan,
+        fmv=fmv_result,
+        decision=decision_result,
         audit=audit,
     )
     await store.set_result(job_id, result)
