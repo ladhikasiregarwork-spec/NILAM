@@ -98,6 +98,23 @@ class TestRunJob(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(job.result.income.basis, "slip_fallback")
         self.assertTrue(job.result.audit.extractor_errors)
 
+    async def test_unexpected_internal_error_fails_job(self):
+        files = [("mut.pdf", b"b")]
+        classify = _async([
+            {"filename": "mut.pdf", "document_type": "mutasi", "confidence": "high"},
+        ])
+        mutasi = _async({"files": [], "credits": [], "audit": {}})
+        store = JobStore(retention=10)
+        job = await store.create()
+        with mock.patch.object(pipeline.upstream, "classify_documents", classify), \
+             mock.patch.object(pipeline.upstream, "extract_mutations", mutasi), \
+             mock.patch.object(pipeline, "compute_income",
+                               side_effect=RuntimeError("boom")):
+            await pipeline.run_job(store, job.id, files, bonus_accept_pct=0.0,
+                                   password=None)
+        self.assertEqual(job.status, "failed")
+        self.assertIn("internal error", job.error)
+
 
 if __name__ == "__main__":
     unittest.main()

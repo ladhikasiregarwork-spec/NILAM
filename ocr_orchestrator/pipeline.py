@@ -46,6 +46,31 @@ async def run_job(
     bonus_accept_pct: float,
     password: str | None,
 ) -> None:
+    """Run the pipeline, guaranteeing the job ends ``completed`` or ``failed``.
+
+    ``_execute`` already handles a classifier outage (fail) and extractor
+    outages (degrade). This wrapper is the backstop: any *unexpected* exception
+    in an unguarded stage is turned into a failed job rather than leaving it
+    stuck in ``running``.
+    """
+    try:
+        await _execute(
+            store, job_id, files,
+            bonus_accept_pct=bonus_accept_pct, password=password,
+        )
+    except Exception as exc:  # backstop — pipeline stages are mostly pure
+        logger.exception("run_job crashed for job %s", job_id)
+        await store.fail(job_id, f"internal error: {exc}")
+
+
+async def _execute(
+    store: JobStore,
+    job_id: str,
+    files: list[tuple[str, bytes]],
+    *,
+    bonus_accept_pct: float,
+    password: str | None,
+) -> None:
     """Run the whole pipeline for one job, mutating job state in ``store``."""
     timings: dict[str, float] = {}
     audit = OrchestratorAudit()
