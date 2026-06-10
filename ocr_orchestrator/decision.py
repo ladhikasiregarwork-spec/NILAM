@@ -22,6 +22,8 @@ def compute_installment(loan: LoanRequest) -> float:
     r = loan.annual_interest_rate / 12.0
     n = loan.tenor_months
     p = loan.loan_amount
+    if n <= 0:
+        raise ValueError(f"tenor_months must be positive, got {n}")
     if r == 0:
         return p / n
     factor = (1.0 + r) ** n
@@ -100,6 +102,7 @@ def decide(
                       passed=dsr_passed, detail=dsr_detail)
 
     # Recommendation — math first, then the income trust hierarchy.
+    # Only income.basis == "bank_verified" yields "eligible"; all other bases yield "refer_to_analyst".
     if ltv_passed and dsr_passed:
         if income.basis == "bank_verified":
             recommendation = "eligible"
@@ -113,8 +116,11 @@ def decide(
     else:
         recommendation = "not_eligible"
         if not ltv_passed:
-            reasons.append("LTV exceeds the cap." if ltv_value is None
-                           else f"LTV {ltv_value:.1%} exceeds cap {max_ltv:.0%}.")
+            reasons.append(
+                "LTV could not be computed (fair_value is 0)."
+                if ltv_value is None
+                else f"LTV {ltv_value:.1%} exceeds cap {max_ltv:.0%}."
+            )
         if not dsr_passed:
             reasons.append(f"DSR {dsr_value:.1%} exceeds cap {max_dsr:.0%}.")
 

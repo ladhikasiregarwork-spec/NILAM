@@ -40,6 +40,11 @@ class TestComputeInstallment(unittest.TestCase):
         expected = 100_000_000 * r * (1 + r) ** n / ((1 + r) ** n - 1)
         self.assertAlmostEqual(compute_installment(loan), expected, places=2)
 
+    def test_zero_tenor_raises(self):
+        with self.assertRaises(ValueError):
+            compute_installment(LoanRequest(
+                loan_amount=100_000_000, tenor_months=0, annual_interest_rate=0.10))
+
 
 class TestDecide(unittest.TestCase):
     def test_eligible_when_checks_pass_and_bank_verified(self):
@@ -101,6 +106,19 @@ class TestDecide(unittest.TestCase):
                      loan=_loan(700_000_000), **THRESH)
         self.assertIn("medians fallback", out.warnings)
         self.assertTrue(any("location not matched" in w.lower() for w in out.warnings))
+
+    def test_nonzero_existing_installment_can_flip_dsr(self):
+        income = _income(20_000_000, "bank_verified")
+        fmv = _fmv(1_000_000_000)
+        loan = _loan(700_000_000)
+        ok = decide(income=income, fmv=fmv, loan=loan,
+                    max_ltv=0.80, max_dsr=0.50, existing_installment=0.0)
+        self.assertTrue(ok.dsr.passed)
+        flipped = decide(income=income, fmv=fmv, loan=loan,
+                         max_ltv=0.80, max_dsr=0.50, existing_installment=4_000_000.0)
+        self.assertFalse(flipped.dsr.passed)
+        self.assertEqual(flipped.existing_installment, 4_000_000.0)
+        self.assertEqual(flipped.recommendation, "not_eligible")
 
 
 if __name__ == "__main__":
