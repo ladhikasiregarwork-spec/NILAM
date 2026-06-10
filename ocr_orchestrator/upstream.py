@@ -62,10 +62,14 @@ async def parse_slips(
     """POST slips to ocr_slip:/parse. Returns ``documents[]`` (English-keyed
     per-slip dicts: ``worker_name``, ``total_paid``, ``period``, ...)."""
     s = get_settings()
-    data = {"password": password} if password else {}
+    # ocr_slip's /parse takes `ocr` and `password` as multipart Form fields,
+    # not query params — send them in `data`.
+    data = {"ocr": "auto"}
+    if password:
+        data["password"] = password
     payload = await _post(
         "ocr_slip", f"{s.ocr_slip_url}/parse",
-        files=_files(pdfs), data=data, params={"ocr": "auto"},
+        files=_files(pdfs), data=data,
     )
     return payload.get("documents", [])
 
