@@ -54,6 +54,39 @@ class TestApi(unittest.TestCase):
             self.assertIn(g.json()["status"],
                           {"pending", "running", "completed", "failed"})
 
+    def test_invalid_loan_amount_is_400(self):
+        r = self.client.post(
+            "/api/v1/applications",
+            files=[("files", ("x.pdf", b"%PDF-1.4 fake", "application/pdf"))],
+            data={"loan_amount": "-5"},
+        )
+        self.assertEqual(r.status_code, 400)
+
+    def test_invalid_tenor_is_400(self):
+        r = self.client.post(
+            "/api/v1/applications",
+            files=[("files", ("x.pdf", b"%PDF-1.4 fake", "application/pdf"))],
+            data={"tenor_months": "0"},
+        )
+        self.assertEqual(r.status_code, 400)
+
+    def test_accepts_collateral_and_loan_fields_returns_202(self):
+        classify = _async([
+            {"filename": "x.pdf", "document_type": "unknown", "confidence": "low"},
+        ])
+        with mock.patch.object(self.api.upstream, "classify_documents", classify):
+            r = self.client.post(
+                "/api/v1/applications",
+                files=[("files", ("x.pdf", b"%PDF-1.4 fake", "application/pdf"))],
+                data={
+                    "luas_tanah": "80", "luas_bangunan": "50",
+                    "kode_pos": "40123", "kelurahan": "antapani kidul",
+                    "loan_amount": "700000000", "tenor_months": "240",
+                    "annual_interest_rate": "0.105",
+                },
+            )
+            self.assertEqual(r.status_code, 202)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -19,7 +19,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from . import __version__, upstream
 from .config import get_settings
 from .jobs import JobStore
-from .models import AcceptedResponse, JobStatusResponse
+from .models import AcceptedResponse, CollateralInput, JobStatusResponse, LoanRequest
 from .pipeline import run_job
 
 logger = logging.getLogger("ocr_orchestrator.api")
@@ -85,6 +85,42 @@ def health() -> dict:
     return {"status": "ok", "version": __version__}
 
 
+def _validate_numeric(name: str, value: float | None, *, allow_zero: bool) -> None:
+    """Reject a provided numeric field that violates its constraint."""
+    if value is None:
+        return
+    if allow_zero and value < 0:
+        raise HTTPException(status_code=400, detail=f"{name} must be >= 0.")
+    if not allow_zero and value <= 0:
+        raise HTTPException(status_code=400, detail=f"{name} must be > 0.")
+
+
+def _build_collateral(luas_tanah, luas_bangunan, kode_pos, kelurahan,
+                      appraisal_month, warnings: list[str]) -> CollateralInput | None:
+    fields = (luas_tanah, luas_bangunan, kode_pos, kelurahan, appraisal_month)
+    if luas_tanah is not None and luas_bangunan is not None:
+        return CollateralInput(
+            luas_tanah=luas_tanah, luas_bangunan=luas_bangunan,
+            kode_pos=kode_pos, kelurahan=kelurahan, appraisal_month=appraisal_month,
+        )
+    if any(v is not None for v in fields):
+        warnings.append("Partial collateral fields provided (need both luas_tanah "
+                        "and luas_bangunan); FMV skipped.")
+    return None
+
+
+def _build_loan(loan_amount, tenor_months, annual_interest_rate,
+                warnings: list[str]) -> LoanRequest | None:
+    fields = (loan_amount, tenor_months, annual_interest_rate)
+    if all(v is not None for v in fields):
+        return LoanRequest(loan_amount=loan_amount, tenor_months=tenor_months,
+                           annual_interest_rate=annual_interest_rate)
+    if any(v is not None for v in fields):
+        warnings.append("Partial loan fields provided (need loan_amount, "
+                        "tenor_months and annual_interest_rate); decision skipped.")
+    return None
+
+
 @app.post(
     "/api/v1/applications",
     response_model=AcceptedResponse,
@@ -97,6 +133,14 @@ async def create_application(
     bonus_accept_pct: Optional[float] = Form(
         None, description="Analyst bonus-acceptance fraction 0.0-1.0 (default from config)."),
     password: Optional[str] = Form(None, description="Optional PDF password for protected files."),
+    luas_tanah: Optional[float] = Form(None, description="Collateral land area m^2 (> 0)."),
+    luas_bangunan: Optional[float] = Form(None, description="Collateral building area m^2 (>= 0)."),
+    kode_pos: Optional[str] = Form(None, description="Collateral postal code."),
+    kelurahan: Optional[str] = Form(None, description="Collateral village/ward."),
+    appraisal_month: Optional[int] = Form(None, description="Appraisal month YYYYMM."),
+    loan_amount: Optional[float] = Form(None, description="Requested loan principal (> 0)."),
+    tenor_months: Optional[int] = Form(None, description="Loan term in months (> 0)."),
+    annual_interest_rate: Optional[float] = Form(None, description="Annual rate as a decimal, e.g. 0.105 (>= 0)."),
 ) -> AcceptedResponse:
     settings = get_settings()
     if not files:
@@ -121,9 +165,21 @@ async def create_application(
     else:
         pct = max(0.0, min(1.0, bonus_accept_pct))  # clamp
 
+    _validate_numeric("luas_tanah", luas_tanah, allow_zero=False)
+    _validate_numeric("luas_bangunan", luas_bangunan, allow_zero=True)
+    _validate_numeric("loan_amount", loan_amount, allow_zero=False)
+    _validate_numeric("tenor_months", tenor_months, allow_zero=False)
+    _validate_numeric("annual_interest_rate", annual_interest_rate, allow_zero=True)
+
+    input_warnings: list[str] = []
+    collateral = _build_collateral(luas_tanah, luas_bangunan, kode_pos, kelurahan,
+                                   appraisal_month, input_warnings)
+    loan = _build_loan(loan_amount, tenor_months, annual_interest_rate, input_warnings)
+
     job = await store.create()
     task = asyncio.create_task(
-        run_job(store, job.id, payload, bonus_accept_pct=pct, password=password)
+        run_job(store, job.id, payload, bonus_accept_pct=pct, password=password,
+                collateral=collateral, loan=loan, input_warnings=input_warnings)
     )
     task.add_done_callback(_log_task_result)
     await store.attach_task(job.id, task)
