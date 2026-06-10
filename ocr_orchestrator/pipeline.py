@@ -1,5 +1,7 @@
-"""Async five-stage orchestration: classify -> extract -> verify -> aggregate
--> assemble. Updates the job's stages as it progresses.
+"""Async stage orchestration: classify -> extract -> verify -> aggregate ->
+fmv -> decide -> assemble. The six tracked stages (classify, extract, verify,
+aggregate, fmv, decide) are surfaced in ``job.stages``; assemble is the final
+(untracked) completion step. Updates the job's stages as it progresses.
 
 Imported as ``from . import upstream`` so tests can patch the upstream calls.
 """

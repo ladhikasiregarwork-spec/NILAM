@@ -171,6 +171,7 @@ class TestRunJob(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(job.result.fmv.fair_value, 1_000_000_000)
         self.assertEqual(job.result.decision.recommendation, "eligible")
         self.assertTrue(job.result.decision.ltv.passed)
+        self.assertTrue(job.result.decision.dsr.passed)
         fmv_stage = next(s for s in job.stages if s.name == "fmv")
         decide_stage = next(s for s in job.stages if s.name == "decide")
         self.assertEqual(fmv_stage.status, "completed")
@@ -211,6 +212,7 @@ class TestRunJob(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(job.result.decision.recommendation, "refer_to_analyst")
         self.assertTrue(job.result.audit.fmv_errors)
         self.assertEqual(next(s for s in job.stages if s.name == "fmv").status, "failed")
+        self.assertEqual(next(s for s in job.stages if s.name == "decide").status, "completed")
 
     async def test_input_warnings_land_in_audit(self):
         files, classify, mutasi, slips, sk, _c, _l = await self._bank_verified_setup()
