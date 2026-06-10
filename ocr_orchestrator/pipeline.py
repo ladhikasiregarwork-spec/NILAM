@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from typing import Any
 
@@ -36,6 +37,17 @@ def _match_pair_view(pair: Any) -> dict[str, Any]:
         "month": pair.credit.month,
         "match_pattern": pair.match_pattern,
     }
+
+
+def _slip_base(source_file: Any) -> str:
+    """Recover the uploaded basename from ocr_slip's rewritten ``source_file``.
+
+    ocr_slip emits ``source_file`` as a full path (parser) or
+    ``name#page-N#date`` (LLM fallback), never the bare uploaded filename, so we
+    strip any directory and any ``#`` suffix to join the extraction back to its
+    DocumentResult.
+    """
+    return os.path.basename(str(source_file or "")).split("#", 1)[0]
 
 
 async def run_job(
@@ -135,7 +147,9 @@ async def _execute(
     await store.set_stage(job_id, "extract", "completed")
 
     # Attach per-document extraction payloads (by filename).
-    slip_by_file = {d.get("source_file"): d for d in slip_docs}
+    slip_by_file: dict[str, dict[str, Any]] = {}
+    for _d in slip_docs:
+        slip_by_file.setdefault(_slip_base(_d.get("source_file")), _d)
     mut_files = mutasi_payload.get("files", [])
     mut_by_file = {f.get("filename"): f for f in mut_files}
     for d in doc_results:

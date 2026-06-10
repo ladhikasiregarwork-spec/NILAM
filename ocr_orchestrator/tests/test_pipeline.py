@@ -34,7 +34,7 @@ class TestRunJob(unittest.IsolatedAsyncioTestCase):
             {"filename": "slip_feb.pdf", "document_type": "slip", "confidence": "high"},
             {"filename": "mut_mar.pdf", "document_type": "mutasi", "confidence": "high"},
         ])
-        slips = _async([{"source_file": "slip_feb.pdf", "worker_name": "BUDI",
+        slips = _async([{"source_file": "slip_feb.pdf#page-1", "worker_name": "BUDI",
                          "total_paid": 9_500_000.0, "period": "2025-02"}])
         mutasi = _async({
             "files": [{"filename": "mut_mar.pdf",
@@ -62,6 +62,10 @@ class TestRunJob(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(job.result.applicant.name, "BUDI")
         self.assertEqual(job.result.applicant.name_source, "slip")
         self.assertEqual(job.result.verification.verified_month_count, 1)
+
+        slip_doc = next(d for d in job.result.documents if d.document_type == "slip")
+        self.assertIsNotNone(slip_doc.extracted)
+        self.assertEqual(slip_doc.extracted["worker_name"], "BUDI")
 
     async def test_classifier_down_fails_job(self):
         from ocr_orchestrator.upstream import UpstreamUnreachableError
