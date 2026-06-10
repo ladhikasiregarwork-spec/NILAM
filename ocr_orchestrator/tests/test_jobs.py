@@ -33,6 +33,29 @@ class TestJobStore(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(job.status, "failed")
         self.assertEqual(job.error, "boom")
 
+    async def test_set_result_marks_completed(self):
+        from ocr_orchestrator.models import (
+            ApplicantInfo, ApplicationResult, IncomeBreakdown,
+            OrchestratorAudit, VerificationInfo,
+        )
+        store = JobStore(retention=10)
+        job = await store.create()
+        result = ApplicationResult(
+            documents=[],
+            applicant=ApplicantInfo(),
+            income=IncomeBreakdown(
+                n_statement_months=0, avg_monthly_gaji_insentif=0.0,
+                monthly_thr=0.0, bonus_total=0.0, bonus_accept_pct=0.0,
+                bonus_monthly=0.0, monthly_qualifying_income=None,
+                basis="none", verified_month_count=0, warnings=[],
+            ),
+            verification=VerificationInfo(),
+            audit=OrchestratorAudit(),
+        )
+        await store.set_result(job.id, result)
+        self.assertEqual(job.status, "completed")
+        self.assertIs(job.result, result)
+
     async def test_retention_evicts_oldest(self):
         store = JobStore(retention=2)
         a = await store.create()

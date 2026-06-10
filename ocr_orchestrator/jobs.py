@@ -30,7 +30,7 @@ class Job:
 
 class JobStore:
     def __init__(self, retention: int = 200) -> None:
-        self._jobs: "OrderedDict[str, Job]" = OrderedDict()
+        self._jobs: OrderedDict[str, Job] = OrderedDict()
         self._lock = asyncio.Lock()
         self._retention = max(1, retention)
 
