@@ -39,7 +39,10 @@ async def _post(service: str, url: str, *, files, data=None, params=None) -> dic
     try:
         async with httpx.AsyncClient(timeout=settings.upstream_timeout_s) as client:
             r = await client.post(url, files=files, data=data or {}, params=params or {})
-    except httpx.ConnectError as exc:
+    except httpx.TransportError as exc:
+        # TransportError is the base of ConnectError and all timeout/network errors,
+        # so a slow or down upstream becomes a clean UpstreamUnreachableError rather
+        # than escaping and leaving the orchestration job stuck.
         raise UpstreamUnreachableError(f"{service} not reachable at {url}: {exc}") from exc
     if r.status_code >= 400:
         raise UpstreamHttpError(service, r.status_code, r.text)
