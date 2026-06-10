@@ -1,0 +1,40 @@
+{
+  "backend": "linear",
+  "current_month": 202606,
+  "reference_min_month_index": 24308,
+  "area_bucket_edges": {
+    "land_area_bucket": [
+      44.75,
+      62.0,
+      72.0,
+      84.0,
+      105.0,
+      216.4500000000001
+    ],
+    "building_area_bucket": [
+      29.95,
+      36.0,
+      45.0,
+      52.200000000000045,
+      75.0,
+      191.50000000000034
+    ]
+  },
+  "lookup_keys": [
+    "kodepos_agunan",
+    "kelurahan_standardized"
+  ],
+  "land_area_column": "luas_tanah",
+  "building_area_column": "luas_bangunan",
+  "location_lookup_path": "artifacts/location_feature_lookup.parquet",
+  "models": {
+    "linear": {
+      "tanah": "artifacts/alternate_tanah_linear_regression_log_price.json",
+      "bangunan": "artifacts/alternate_bangunan_linear_regression_log_price.json"
+    },
+    "catboost": {
+      "tanah": "artifacts/alternate_tanah_catboost_log_price.json",
+      "bangunan": "artifacts/alternate_bangunan_catboost_log_price.json"
+    }
+  }
+}

@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+pydantic>=2
+pandas
+numpy
+pyarrow
+catboost   # only needed when backend = "catboost"
+httpx      # only needed to run the test suite (fastapi.testclient)
