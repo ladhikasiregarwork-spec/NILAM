@@ -1,0 +1,12 @@
+# Extra deps for the local demo harness (installed into the shared repo-root .venv).
+# fastapi, uvicorn, pypdfium2, httpx, python-multipart are already in the
+# repo-root requirements.txt — listed here only for standalone clarity.
+
+# Test-only
+pytest>=8.0,<9
+respx>=0.21,<1            # mock httpx calls to Ollama in llm_adapter tests
+reportlab>=4.0,<5         # generate text-layer PDF fixtures in tests
+
+# Optional: only needed if you enable the Tesseract fallback for scanned pages
+# pytesseract>=0.3.13,<1
+# Pillow>=10.0,<12
