@@ -103,3 +103,25 @@ async def parse_sk(
     return await _post(
         "ocr_sk", f"{s.ocr_sk_url}/parse", files=_files(pdfs), data=data
     )
+
+
+async def predict_fair_value(collateral: dict[str, Any]) -> dict[str, Any]:
+    """POST collateral to house_fair_market_value:/predict (JSON body, not
+    multipart). Returns the FMV response dict: ``land_value``, ``building_value``,
+    ``fair_value``, ``location_matched``, ``backend``, ``warnings``.
+
+    Mirrors the error semantics of ``_post``: a transport/network error becomes
+    ``UpstreamUnreachableError`` and a 4xx/5xx becomes ``UpstreamHttpError`` so
+    the pipeline's fmv stage can degrade cleanly."""
+    s = get_settings()
+    url = f"{s.fmv_url}/predict"
+    try:
+        async with httpx.AsyncClient(timeout=s.fmv_timeout_s) as client:
+            r = await client.post(url, json=collateral)
+    except httpx.TransportError as exc:
+        raise UpstreamUnreachableError(
+            f"house_fair_market_value not reachable at {url}: {exc}"
+        ) from exc
+    if r.status_code >= 400:
+        raise UpstreamHttpError("house_fair_market_value", r.status_code, r.text)
+    return r.json()
