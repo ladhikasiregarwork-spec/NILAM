@@ -13,6 +13,7 @@ JobState = Literal["pending", "running", "completed", "failed"]
 StageState = Literal["pending", "running", "completed", "failed"]
 DocStatus = Literal["extracted", "recognized_not_extracted", "unclassified"]
 IncomeBasis = Literal["bank_verified", "bank_unverified", "slip_fallback", "none"]
+RowSource = Literal["bank_verified", "bank_unverified", "bank_only", "slip_only"]
 
 
 class DocumentResult(BaseModel):
@@ -45,6 +46,18 @@ class IncomeBreakdown(BaseModel):
     basis: IncomeBasis
     verified_month_count: int
     warnings: list[str] = Field(default_factory=list)
+
+
+class MonthlyIncomeRow(BaseModel):
+    """One row in the per-month income breakdown table (spec §6)."""
+    month: str                                  # YYYY-MM
+    fixed_routine_income: float                 # Gaji from bank, or slip pokok
+    thr: Optional[float]                        # None when source is slip_only
+    bonus_non_fixed: float                      # Bonus + Insentif
+    deduction: Optional[float]                  # None when no slip available
+    total_paid: Optional[float]                 # None when no slip available
+    bank_salary_credit: Optional[float]         # None when source is slip_only
+    source: RowSource
 
 
 class VerificationInfo(BaseModel):
