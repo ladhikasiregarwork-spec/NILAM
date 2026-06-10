@@ -1,0 +1,11 @@
+# OPTIONAL alternative to the tiny llm_adapter shim.
+# Run with:  litellm --config demo_harness/llm_adapter/litellm.config.yaml --port 4000
+# Then point AZURE_OPENAI_ENDPOINT at http://127.0.0.1:4000 exactly as for the shim.
+# Validate the Azure route first (see README "One-curl Azure-route test") before
+# wiring the services — if it answers the /openai/deployments/... path, use it;
+# otherwise stick with the tiny shim.
+model_list:
+  - model_name: gpt-4.1-mini          # the AZURE_OPENAI_DEPLOYMENT the services send
+    litellm_params:
+      model: ollama/qwen2.5:7b-instruct
+      api_base: http://127.0.0.1:11434
