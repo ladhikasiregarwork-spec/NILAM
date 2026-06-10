@@ -22,7 +22,34 @@ See the design spec: `docs/superpowers/specs/2026-06-11-local-demo-orchestrator-
    ```
    (Drop to `qwen2.5:3b-instruct` if 7B is too slow on your CPU; set
    `LLM_ADAPTER_MODEL` to match.)
-3. **`.env`**: apply the block from the plan's Task 9 to the repo-root `.env`.
+3. **`.env`** (repo root, gitignored): add/replace these keys. They swap the five
+   services onto the local stand-ins and bump timeouts — **no code changes**.
+   ```ini
+   # OCR -> local shim
+   OCR_ENDPOINT_URL=http://127.0.0.1:8060/predict/markdown
+   OCR_API_KEY=local-demo
+   OCR_SKIP_ORIENTATION=false
+   OCR_TIMEOUT_S=300
+
+   # LLM -> local adapter (Azure URL shape)
+   AZURE_OPENAI_ENDPOINT=http://127.0.0.1:4000
+   AZURE_OPENAI_DEPLOYMENT=gpt-4.1-mini
+   AZURE_OPENAI_API_KEY=local-demo
+   AZURE_OPENAI_API_VERSION=2025-01-01-preview
+   LLM_REQUEST_TIMEOUT_S=300
+
+   # Orchestrator upstream registry — MUST be the renumbered 5001-5004 ports.
+   # (ocr_orchestrator/config.py still hard-codes stale 8000-8300 defaults, so
+   #  these keys are required or it will call the wrong ports.)
+   OCR_CLASSIFIER_URL=http://127.0.0.1:5001
+   OCR_SK_URL=http://127.0.0.1:5002
+   OCR_SLIP_URL=http://127.0.0.1:5003
+   OCR_MUTASI_URL=http://127.0.0.1:5004
+   UPSTREAM_TIMEOUT_S=300
+
+   # Optional: enable scanned-page OCR in the shim (needs pytesseract+Pillow)
+   # OCR_SHIM_TESSERACT=true
+   ```
 4. *(Optional, scanned docs only)* install Tesseract + the deps:
    ```
    .venv\Scripts\python -m pip install pytesseract Pillow
