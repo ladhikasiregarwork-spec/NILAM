@@ -48,3 +48,19 @@ def test_blank_pdf_disabled_tesseract_warns(make_blank_pdf):
 
 def test_tesseract_ocr_page_exists_and_is_callable():
     assert callable(E.tesseract_ocr_page)
+
+
+def test_extract_from_texts_ocr_error_produces_single_warning():
+    def failing_ocr(index):
+        raise RuntimeError("tesseract crashed")
+    md, warnings = E.extract_from_texts([""], min_chars=10,
+                                        enable_tesseract=True, ocr_page=failing_ocr)
+    assert md == ""
+    assert len(warnings) == 1
+    assert "Tesseract error" in warnings[0]
+
+
+def test_extract_from_texts_multipage_assembly_separator():
+    md, _ = E.extract_from_texts(["first page text here", "second page long enough"],
+                                 min_chars=10, enable_tesseract=False, ocr_page=None)
+    assert md == "first page text here\n\nsecond page long enough"

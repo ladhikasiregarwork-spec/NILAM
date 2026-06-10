@@ -1,6 +1,7 @@
 """PaddleOCR stand-in: reproduces the `/predict/markdown` contract the NILAM
 services expect, backed by pypdfium2 (+ optional Tesseract). No service-package
-imports — this is a pure boundary replacement configured via OCR_ENDPOINT_URL.
+imports. The NILAM clients reach it via their `OCR_ENDPOINT_URL`; the shim itself
+is configured via `OCR_SHIM_TESSERACT` / `OCR_SHIM_MIN_CHARS`.
 """
 from __future__ import annotations
 
@@ -39,9 +40,10 @@ async def predict_markdown(
         return {"response_code": 500, "error_message": f"extract failed: {exc}", "data": {}}
 
     _counter["n"] += 1
+    n = _counter["n"]
     return {
         "response_code": 200,
-        "request_id": f"local-{_counter['n']}",
+        "request_id": f"local-{n}",
         "response_time_ms": int((time.perf_counter() - started) * 1000),
         "data": {"markdown": markdown},
         "warnings": warnings,

@@ -13,7 +13,7 @@ DEFAULT_MIN_CHARS = 10
 
 def assemble_markdown(page_texts: list[str]) -> str:
     """Join non-empty page texts with a blank line between pages."""
-    return "\n\n".join(t for t in page_texts if t).strip()
+    return "\n\n".join(t for t in page_texts if t.strip()).strip()
 
 
 def extract_from_texts(
@@ -39,12 +39,12 @@ def extract_from_texts(
                 recovered = (ocr_page(i) or "").strip()
             except Exception as exc:  # never let one page sink the document
                 warnings.append(f"page {i + 1}: Tesseract error: {exc}")
-                recovered = ""
+                continue  # already warned — don't also emit the "empty" warning
             if recovered:
                 texts[i] = recovered
                 warnings.append(f"page {i + 1}: used Tesseract OCR")
-                continue
-            warnings.append(f"page {i + 1}: no text layer; Tesseract empty")
+            else:
+                warnings.append(f"page {i + 1}: no text layer; Tesseract empty")
         else:
             warnings.append(f"page {i + 1}: no text layer; Tesseract disabled")
     return assemble_markdown(texts), warnings
@@ -60,7 +60,9 @@ def page_texts_pypdfium(pdf_bytes: bytes) -> list[str]:
         for i in range(len(doc)):
             page = doc[i]
             textpage = page.get_textpage()
-            out.append((textpage.get_text_range() or "").strip())
+            # get_text_bounded() with no args = full page; get_text_range() warns
+            # that it redirects here, so call it directly.
+            out.append((textpage.get_text_bounded() or "").strip())
             textpage.close()
             page.close()
         return out
