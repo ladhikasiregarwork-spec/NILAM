@@ -1,0 +1,59 @@
+import unittest
+from unittest import mock
+
+from fastapi.testclient import TestClient
+
+
+def _async(value):
+    async def _fn(*args, **kwargs):
+        return value
+    return _fn
+
+
+class TestApi(unittest.TestCase):
+    def setUp(self):
+        from ocr_orchestrator import api
+        self.api = api
+        self.client = TestClient(api.app)
+
+    def test_health(self):
+        r = self.client.get("/health")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["status"], "ok")
+
+    def test_root_redirects_to_upload(self):
+        r = self.client.get("/", follow_redirects=False)
+        self.assertEqual(r.status_code, 307)
+        self.assertEqual(r.headers["location"], "/upload")
+
+    def test_post_requires_files(self):
+        r = self.client.post("/api/v1/applications", files=[])
+        self.assertIn(r.status_code, (400, 422))
+
+    def test_get_unknown_job_404(self):
+        r = self.client.get("/api/v1/applications/does-not-exist")
+        self.assertEqual(r.status_code, 404)
+
+    def test_post_returns_202_and_job_is_retrievable(self):
+        # Stub classify so the background task progresses without network.
+        classify = _async([
+            {"filename": "x.pdf", "document_type": "unknown", "confidence": "low"},
+        ])
+        with mock.patch.object(self.api.upstream, "classify_documents", classify):
+            r = self.client.post(
+                "/api/v1/applications",
+                files=[("files", ("x.pdf", b"%PDF-1.4 fake", "application/pdf"))],
+            )
+            self.assertEqual(r.status_code, 202)
+            body = r.json()
+            self.assertIn("job_id", body)
+            self.assertEqual(body["status_url"], f"/api/v1/applications/{body['job_id']}")
+            # Job is retrievable; status is one of the valid states.
+            g = self.client.get(body["status_url"])
+            self.assertEqual(g.status_code, 200)
+            self.assertIn(g.json()["status"],
+                          {"pending", "running", "completed", "failed"})
+
+
+if __name__ == "__main__":
+    unittest.main()
