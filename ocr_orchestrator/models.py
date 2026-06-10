@@ -10,10 +10,11 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field
 
 JobState = Literal["pending", "running", "completed", "failed"]
-StageState = Literal["pending", "running", "completed", "failed"]
+StageState = Literal["pending", "running", "completed", "failed", "skipped"]
 DocStatus = Literal["extracted", "recognized_not_extracted", "unclassified"]
 IncomeBasis = Literal["bank_verified", "bank_unverified", "slip_fallback", "none"]
 RowSource = Literal["bank_verified", "bank_unverified", "bank_only", "slip_only"]
+DecisionRecommendation = Literal["eligible", "not_eligible", "refer_to_analyst"]
 
 
 class DocumentResult(BaseModel):
@@ -81,10 +82,59 @@ class VerificationInfo(BaseModel):
     matched_pairs: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class CollateralInput(BaseModel):
+    """Collateral description for the FMV call (echoed back in the result)."""
+    luas_tanah: float
+    luas_bangunan: float
+    kode_pos: Optional[str] = None
+    kelurahan: Optional[str] = None
+    appraisal_month: Optional[int] = None
+
+
+class LoanRequest(BaseModel):
+    """The requested loan terms (echoed back in the result)."""
+    loan_amount: float
+    tenor_months: int
+    annual_interest_rate: float   # decimal fraction, e.g. 0.105
+
+
+class FmvResult(BaseModel):
+    """house_fair_market_value /predict response."""
+    land_value: float
+    building_value: float
+    fair_value: float
+    location_matched: bool
+    backend: str
+    warnings: list[str] = Field(default_factory=list)
+
+
+class CheckResult(BaseModel):
+    """One decision check (LTV or DSR). ``value`` is None when undefined."""
+    name: str
+    value: Optional[float] = None
+    threshold: float
+    passed: bool
+    detail: str = ""
+
+
+class DecisionResult(BaseModel):
+    """The credit recommendation and the checks behind it."""
+    recommendation: DecisionRecommendation
+    monthly_installment: Optional[float] = None
+    monthly_income: Optional[float] = None
+    max_installment: Optional[float] = None
+    existing_installment: float = 0.0
+    ltv: Optional[CheckResult] = None
+    dsr: Optional[CheckResult] = None
+    reasons: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class OrchestratorAudit(BaseModel):
     stage_timings_ms: dict[str, float] = Field(default_factory=dict)
     classifier_errors: list[str] = Field(default_factory=list)
     extractor_errors: list[str] = Field(default_factory=list)
+    fmv_errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 
 
@@ -93,6 +143,10 @@ class ApplicationResult(BaseModel):
     applicant: ApplicantInfo
     income: Optional[IncomeBreakdown]
     verification: VerificationInfo
+    collateral: Optional[CollateralInput] = None
+    loan: Optional[LoanRequest] = None
+    fmv: Optional[FmvResult] = None
+    decision: Optional[DecisionResult] = None
     audit: OrchestratorAudit
 
 

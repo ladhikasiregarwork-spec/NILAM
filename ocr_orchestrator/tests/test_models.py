@@ -50,6 +50,28 @@ class TestModels(unittest.TestCase):
         self.assertIsNone(r.result)
         self.assertIsNone(r.error)
 
+    def test_decision_models_assemble(self):
+        from ocr_orchestrator.models import (
+            CheckResult, CollateralInput, DecisionResult, FmvResult, LoanRequest,
+        )
+        collateral = CollateralInput(luas_tanah=80.0, luas_bangunan=50.0)
+        loan = LoanRequest(loan_amount=700_000_000, tenor_months=240,
+                           annual_interest_rate=0.10)
+        fmv = FmvResult(land_value=600_000_000, building_value=400_000_000,
+                        fair_value=1_000_000_000, location_matched=True,
+                        backend="linear", warnings=[])
+        decision = DecisionResult(
+            recommendation="eligible",
+            ltv=CheckResult(name="ltv", value=0.70, threshold=0.80,
+                            passed=True, detail="ok"),
+        )
+        self.assertIsNone(collateral.kode_pos)
+        self.assertEqual(loan.tenor_months, 240)
+        self.assertEqual(fmv.fair_value, 1_000_000_000)
+        self.assertEqual(decision.recommendation, "eligible")
+        self.assertEqual(decision.existing_installment, 0.0)
+        self.assertIsNone(decision.dsr)
+
 
 class TestMonthlyIncomeRow(unittest.TestCase):
     def test_row_validates_and_allows_nulls(self):
