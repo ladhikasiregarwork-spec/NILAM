@@ -22,3 +22,18 @@ def test_extract_from_texts_uses_injected_ocr_when_enabled():
     assert calls == [0]
     assert "OCR RECOVERED" in md
     assert warnings == ["page 1: used Tesseract OCR"]
+
+
+def test_page_texts_pypdfium_reads_text_layer(make_text_pdf):
+    pdf = make_text_pdf(["Hello OCR shim", "Second page words"])
+    texts = E.page_texts_pypdfium(pdf)
+    assert len(texts) == 2
+    assert "Hello OCR shim" in texts[0]
+    assert "Second page words" in texts[1]
+
+
+def test_extract_markdown_end_to_end_text_layer(make_text_pdf):
+    pdf = make_text_pdf(["Gaji pokok 5000000"])
+    md, warnings = E.extract_markdown(pdf, enable_tesseract=False, min_chars=10)
+    assert "Gaji pokok 5000000" in md
+    assert warnings == []
