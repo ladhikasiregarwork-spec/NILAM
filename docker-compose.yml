@@ -53,3 +53,18 @@ services:
       - OCR_MUTASI_URL=http://ocr_mutasi:8300
     depends_on: [ocr_slip, ocr_mutasi]
     restart: unless-stopped
+
+  ocr_orchestrator:
+    build: { context: ., dockerfile: ocr_orchestrator/Dockerfile }
+    image: ocr_orchestrator
+    container_name: ocr_orchestrator
+    ports: ["8500:8500"]
+    env_file: [.env]
+    # Reach the upstream services by their compose DNS names, not 127.0.0.1.
+    environment:
+      - OCR_CLASSIFIER_URL=http://ocr_classifier:8000
+      - OCR_SK_URL=http://ocr_sk:8100
+      - OCR_SLIP_URL=http://ocr_slip:8200
+      - OCR_MUTASI_URL=http://ocr_mutasi:8300
+    depends_on: [ocr_classifier, ocr_sk, ocr_slip, ocr_mutasi]
+    restart: unless-stopped
