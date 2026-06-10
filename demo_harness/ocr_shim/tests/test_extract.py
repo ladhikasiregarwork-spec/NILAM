@@ -37,3 +37,14 @@ def test_extract_markdown_end_to_end_text_layer(make_text_pdf):
     md, warnings = E.extract_markdown(pdf, enable_tesseract=False, min_chars=10)
     assert "Gaji pokok 5000000" in md
     assert warnings == []
+
+
+def test_blank_pdf_disabled_tesseract_warns(make_blank_pdf):
+    pdf = make_blank_pdf(1)
+    md, warnings = E.extract_markdown(pdf, enable_tesseract=False, min_chars=10)
+    assert md == ""
+    assert warnings == ["page 1: no text layer; Tesseract disabled"]
+
+
+def test_tesseract_ocr_page_exists_and_is_callable():
+    assert callable(E.tesseract_ocr_page)

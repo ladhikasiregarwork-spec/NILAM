@@ -80,3 +80,23 @@ def extract_markdown(
     return extract_from_texts(
         texts, min_chars=min_chars, enable_tesseract=enable_tesseract, ocr_page=ocr_page
     )
+
+
+def tesseract_ocr_page(pdf_bytes: bytes, index: int, *, dpi: int = 200, lang: str = "ind+eng") -> str:
+    """Render one page to an image and OCR it with Tesseract.
+
+    Imports pytesseract/Pillow lazily so the shim runs without them when the
+    Tesseract fallback is disabled. Raises if they are missing — the caller in
+    `extract_from_texts` already swallows the error into a per-page warning.
+    """
+    import pypdfium2 as pdfium
+    import pytesseract  # type: ignore
+
+    doc = pdfium.PdfDocument(pdf_bytes)
+    try:
+        page = doc[index]
+        pil_image = page.render(scale=dpi / 72).to_pil()
+        page.close()
+        return pytesseract.image_to_string(pil_image, lang=lang)
+    finally:
+        doc.close()
