@@ -38,6 +38,19 @@ class Settings(BaseSettings):
     # In-memory job store: keep at most this many most-recent jobs.
     job_retention: int = 200
 
+    # Fair-market-value service (standalone; reached over HTTP, not imported —
+    # it keeps its own .venv/parquet/models). Default = its uvicorn default port.
+    fmv_url: str = "http://127.0.0.1:8000"
+    fmv_timeout_s: float = 30.0
+
+    # Decision thresholds.
+    max_ltv: float = 0.80   # loan-to-value cap
+    max_dsr: float = 0.50   # debt-service-ratio cap (matches the frontend InstallmentCard)
+    # Existing monthly installment from SLIK — placeholder until that service is
+    # wired. The DSR check subtracts this from the income capacity; 0.0 means
+    # "assume no existing debt" for now.
+    default_existing_installment: float = 0.0
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

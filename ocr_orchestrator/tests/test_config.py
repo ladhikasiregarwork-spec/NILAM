@@ -20,6 +20,14 @@ class TestSettings(unittest.TestCase):
         s = Settings(_env_file=None)
         self.assertIsInstance(s.default_bonus_accept_pct, float)
 
+    def test_fmv_and_decision_defaults(self):
+        s = Settings(_env_file=None)
+        self.assertEqual(s.fmv_url, "http://127.0.0.1:8000")
+        self.assertEqual(s.fmv_timeout_s, 30.0)
+        self.assertEqual(s.max_ltv, 0.80)
+        self.assertEqual(s.max_dsr, 0.50)
+        self.assertEqual(s.default_existing_installment, 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()
