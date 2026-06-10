@@ -15,6 +15,7 @@ from . import upstream
 from .identity import resolve_applicant_name
 from .income import compute_income
 from .jobs import JobStore
+from .monthly import build_monthly_breakdown
 from .models import (
     ApplicantInfo,
     ApplicationResult,
@@ -193,6 +194,7 @@ async def _execute(
         slip_total_paids=slip_total_paids,
         bonus_accept_pct=bonus_accept_pct,
     )
+    income.monthly_breakdown = build_monthly_breakdown(credits, slip_docs, matches)
     timings["aggregate"] = (time.perf_counter() - t0) * 1000
     await store.set_stage(job_id, "aggregate", "completed")
 

@@ -67,6 +67,17 @@ class TestRunJob(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(slip_doc.extracted)
         self.assertEqual(slip_doc.extracted["worker_name"], "BUDI")
 
+        # --- monthly breakdown is populated end-to-end ---
+        breakdown = job.result.income.monthly_breakdown
+        self.assertEqual(len(breakdown), 1)
+        row = breakdown[0]
+        self.assertEqual(row.month, "2025-03")          # homed to the bank credit month
+        self.assertEqual(row.source, "bank_verified")
+        self.assertEqual(row.fixed_routine_income, 9_500_000)
+        self.assertEqual(row.bank_salary_credit, 9_500_000)
+        self.assertEqual(row.total_paid, 9_500_000)     # from the matched slip
+        self.assertEqual(row.thr, 0.0)                  # bank row, no THR -> real 0
+
     async def test_classifier_down_fails_job(self):
         from ocr_orchestrator.upstream import UpstreamUnreachableError
         files = [("x.pdf", b"a")]
