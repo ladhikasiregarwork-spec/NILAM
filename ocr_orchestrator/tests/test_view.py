@@ -3,6 +3,9 @@ import unittest
 
 from ocr_orchestrator import view
 from ocr_orchestrator.models import AgunanInput, AgunanView, CollateralInput, FmvResult, EmploymentView, IdentityView
+from ocr_orchestrator.models import (  # extend the model imports
+    DecisionResult, InstallmentView, IncomeBreakdown,
+)
 
 
 class TestProjectEmployment(unittest.TestCase):
@@ -79,3 +82,37 @@ class TestProjectAgunan(unittest.TestCase):
         self.assertIsNone(out.npw)
         self.assertIsNone(out.harga_rumah)
         self.assertIsNone(out.luas_tanah)
+
+
+def _income(**kw):
+    base = dict(n_statement_months=3, avg_monthly_gaji_insentif=14_598_876.0,
+                monthly_thr=2_753_552.0, bonus_total=54_933_362.0,
+                bonus_accept_pct=0.5, bonus_monthly=2_288_890.0,
+                monthly_qualifying_income=19_641_318.0, basis="bank_verified",
+                verified_month_count=3)
+    base.update(kw)
+    return IncomeBreakdown(**base)
+
+
+class TestProjectInstallment(unittest.TestCase):
+    def test_from_income_and_decision(self):
+        dec = DecisionResult(recommendation="eligible", monthly_installment=4_532_136.0,
+                             monthly_income=19_641_318.0, existing_installment=0.0)
+        out = view.project_installment(_income(), dec)
+        self.assertEqual(out.gaji_bulanan, 14_598_876.0)
+        self.assertEqual(out.thr_bulanan, 2_753_552.0)
+        self.assertEqual(out.bonus_bulanan, 2_288_890.0)
+        self.assertEqual(out.slik_deduction, 0.0)
+        self.assertEqual(out.kemampuan_bayar, 19_641_318.0)   # qi - slik
+        self.assertEqual(out.angsuran_kpr, 4_532_136.0)
+        self.assertEqual(out.verdict, "eligible")
+
+    def test_none_income_returns_none(self):
+        self.assertIsNone(view.project_installment(None, None))
+
+    def test_no_decision_uses_zero_slik(self):
+        out = view.project_installment(_income(monthly_qualifying_income=None,
+                                               basis="none"), None)
+        self.assertEqual(out.slik_deduction, 0.0)
+        self.assertIsNone(out.kemampuan_bayar)
+        self.assertIsNone(out.verdict)

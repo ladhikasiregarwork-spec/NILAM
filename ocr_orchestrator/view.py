@@ -10,8 +10,8 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from .models import (
-    AgunanInput, AgunanView, CollateralInput, EmploymentView, FmvResult,
-    IdentityView, KtpView,
+    AgunanInput, AgunanView, CollateralInput, DecisionResult, EmploymentView,
+    FmvResult, IdentityView, IncomeBreakdown, InstallmentView, KtpView,
 )
 
 
@@ -67,6 +67,30 @@ def project_agunan(
         kode_pos=collateral.kode_pos if collateral else None,
         npw=fmv.fair_value if fmv else None,
         fmv=fmv,
+    )
+
+
+def project_installment(
+    income: Optional[IncomeBreakdown],
+    decision: Optional[DecisionResult],
+) -> Optional[InstallmentView]:
+    """Kemampuan Bayar from income + decision. SLIK deduction is 0 for now."""
+    if income is None:
+        return None
+    slik = decision.existing_installment if decision else 0.0
+    qi = income.monthly_qualifying_income
+    kemampuan = (qi - slik) if qi is not None else None
+    return InstallmentView(
+        gaji_bulanan=income.avg_monthly_gaji_insentif,
+        thr_bulanan=income.monthly_thr,
+        bonus_bulanan=income.bonus_monthly,
+        bonus_total=income.bonus_total,
+        bonus_accept_pct=income.bonus_accept_pct,
+        monthly_qualifying_income=qi,
+        slik_deduction=slik,
+        kemampuan_bayar=kemampuan,
+        angsuran_kpr=decision.monthly_installment if decision else None,
+        verdict=decision.recommendation if decision else None,
     )
 
 

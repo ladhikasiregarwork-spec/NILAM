@@ -190,6 +190,20 @@ class AgunanView(BaseModel):
     fmv: Optional[FmvResult] = None
 
 
+class InstallmentView(BaseModel):
+    """Calculate Installment / Kemampuan Bayar section (D1: served computed)."""
+    gaji_bulanan: Optional[float] = None
+    thr_bulanan: Optional[float] = None
+    bonus_bulanan: Optional[float] = None
+    bonus_total: Optional[float] = None
+    bonus_accept_pct: Optional[float] = None
+    monthly_qualifying_income: Optional[float] = None
+    slik_deduction: float = 0.0
+    kemampuan_bayar: Optional[float] = None
+    angsuran_kpr: Optional[float] = None
+    verdict: Optional[str] = None
+
+
 class CheckResult(BaseModel):
     """One decision check (LTV or DSR). ``value`` is None when undefined."""
     name: str
