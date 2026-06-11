@@ -55,6 +55,32 @@ class TestParseMatchResponse(unittest.TestCase):
         self.assertEqual(matches[0].credit.month, "2025-07")
         self.assertEqual(verified, {"2025-07"})
 
+    def test_unmatched_slip_still_in_slip_docs(self):
+        # Two slips, only one paired to a Gaji credit. Spec §7: every slip must
+        # appear in slip_docs (matched or not) so the unmatched one can still
+        # become a slip_only month row downstream.
+        payload = {
+            "matches": [
+                {"slip": {"source_file": "slip_a.pdf"},
+                 "credit": {"month": "2025-03", "tanggal": "2025-03-25",
+                            "amount": 9_000_000.0},
+                 "match_pattern": "next_month"},
+            ],
+            "slip_extraction": {"documents": [
+                {"source_file": "slip_a.pdf", "total_paid": 9_000_000.0,
+                 "period": "2025-02"},
+                {"source_file": "slip_b.pdf", "total_paid": 4_000_000.0,
+                 "period": "2025-05"},
+            ]},
+            "mutasi_extraction": {"files": [], "credits": [], "audit": {}},
+        }
+        slip_docs, _credits, _files, matches, verified = \
+            matching.parse_match_response(payload)
+        self.assertEqual({d["source_file"] for d in slip_docs},
+                         {"slip_a.pdf", "slip_b.pdf"})   # unmatched slip retained
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(verified, {"2025-03"})
+
     def test_empty_payload(self):
         slip_docs, credits, mut_files, matches, verified = \
             matching.parse_match_response({})

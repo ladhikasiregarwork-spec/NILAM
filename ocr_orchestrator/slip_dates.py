@@ -22,6 +22,11 @@ _MONTHS = {
     "DEC": 12, "DES": 12, "DESEMBER": 12, "DECEMBER": 12,
 }
 
+# Boundary is letter-only — ``(?<![A-Za-z])``/``(?![A-Za-z])`` rather than ``\b`` —
+# so a month token glued to an underscore parses (e.g. ``Slip_Februari_2025.pdf``).
+# This deliberately differs from ocr_match.pipeline's ``\b`` original (``_`` is a
+# word char, so ``\b`` would reject the common underscore-delimited filenames). It
+# only affects placement of *unmatched* slips, so the slight divergence is safe.
 _MONTH_NAME_RE = re.compile(
     r"(?<![A-Za-z])(" + "|".join(sorted(_MONTHS, key=len, reverse=True)) + r")(?![A-Za-z])[\s_/-]*(\d{4})",
     re.IGNORECASE,
