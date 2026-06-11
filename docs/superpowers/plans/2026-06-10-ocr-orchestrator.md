@@ -1,5 +1,7 @@
 # OCR Orchestrator Implementation Plan
 
+> **Status — 2026-06-11: ✅ Implemented & shipped to `main` (tests passing).** The step checkboxes below are the original execution checklist, kept for history and not individually re-ticked (a few `(Optional)` manual/networked steps were not run).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a sixth sibling service, `ocr_orchestrator` (port 8500), that accepts an unlabeled PDF bundle, classifies each document, routes it to the right OCR service, verifies salary slips against bank Gaji credits, and returns one monthly qualifying-income figure — via an async job + polling API.

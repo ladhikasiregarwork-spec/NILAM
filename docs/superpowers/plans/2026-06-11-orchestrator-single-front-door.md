@@ -1,5 +1,7 @@
 # Orchestrator Single Front Door — Implementation Plan
 
+> **Status — 2026-06-11: ✅ Implemented & shipped to `main` (tests passing).** The step checkboxes below are the original execution checklist, kept for history and not individually re-ticked (a few `(Optional)` manual/networked steps were not run).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make `ocr_match` the single front door for slip + mutasi extraction *and* matching, then rewire `ocr_orchestrator` to parse nothing itself — it sources slips, all-category credits, account/files, and the match result from one `ocr_match` call.

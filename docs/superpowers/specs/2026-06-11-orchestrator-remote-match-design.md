@@ -1,7 +1,7 @@
 # Orchestrator: single front door — slip + mutasi + match via `ocr_match`
 
 **Date:** 2026-06-11
-**Status:** Approved (design); pending implementation plan
+**Status:** ✅ Implemented (shipped to `main`, 2026-06-11)
 **Scope:** `ocr_orchestrator` consumes an extended `ocr_match` response that carries
 **full slip extraction + full mutasi extraction + the match result**, so the
 orchestrator drops its own `ocr_slip` and `ocr_mutasi` calls entirely. Requires a

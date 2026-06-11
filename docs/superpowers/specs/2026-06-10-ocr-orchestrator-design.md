@@ -1,7 +1,7 @@
 # OCR Orchestrator — Design Spec
 
 **Date:** 2026-06-10
-**Status:** Approved (design); pending implementation plan
+**Status:** ✅ Implemented (shipped to `main`, 2026-06-11)
 **Scope:** Orchestrator only (one of several NILAM sub-projects)
 
 ---
