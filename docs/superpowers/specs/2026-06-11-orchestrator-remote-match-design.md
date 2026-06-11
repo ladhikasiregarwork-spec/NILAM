@@ -1,226 +1,225 @@
-# Orchestrator: route matching + slip extraction through the hosted `ocr_match` service
+# Orchestrator: single front door — slip + mutasi + match via `ocr_match`
 
 **Date:** 2026-06-11
 **Status:** Approved (design); pending implementation plan
-**Scope:** `ocr_orchestrator` only — replace the in-process matcher with an HTTP
-call to the already-deployed `ocr_match` service. No change to `ocr_match` or any
-other service.
+**Scope:** `ocr_orchestrator` consumes an extended `ocr_match` response that carries
+**full slip extraction + full mutasi extraction + the match result**, so the
+orchestrator drops its own `ocr_slip` and `ocr_mutasi` calls entirely. Requires a
+contract change in `ocr_match` (passthrough of the two upstream payloads).
 
 ---
 
 ## 1. Purpose
 
-Today the orchestrator's **verify** stage matches salary slips against bank `Gaji`
-credits by **importing `ocr_match`'s code in-process** (`ocr_orchestrator/verify.py`
-does `from ocr_match.matcher import match_all`; `ocr_orchestrator/monthly.py` also
-imports `ParsedSlip` and `_slip_month` from `ocr_match`).
+Today the orchestrator calls `ocr_slip`, `ocr_mutasi`, **and** imports `ocr_match`'s
+matcher in-process. We collapse the slip + mutasi + match work into **one HTTP call
+to `ocr_match`**:
 
-This spec changes the orchestrator to call the **hosted `ocr_match` service over
-HTTP** (`POST /api/v1/match`) instead. Two goals drive it:
+- **Decouple (A):** no `ocr_match` imports, no shared venv, no `AZURE_OPENAI_*`
+  requirement in the orchestrator.
+- **Single front door (B):** `ocr_match` already runs `ocr_slip` and `ocr_mutasi`
+  internally. If it **returns their full output** (not just the matched `Gaji`
+  rows), the orchestrator needs no upstream extraction calls of its own — slips and
+  mutasi are parsed **once**, inside `ocr_match`.
 
-- **Decouple the code (A):** the orchestrator should not import `ocr_match`, share
-  its venv, or inherit its `AZURE_OPENAI_*` requirement. It should treat
-  `ocr_match` as a true remote microservice.
-- **Single source of truth (B):** all matching logic lives only in the deployed
-  `ocr_match` service, so matching can change in one place.
-
-A secondary win falls out of the change: because `ocr_match`'s response already
-contains fully-parsed slip data, the orchestrator can **source its slip extraction
-from `ocr_match`** and drop its own happy-path `ocr_slip` call — so slips are
-parsed once, not twice.
+Classification (`ocr_classifier`, to know which PDFs are slips vs mutasi vs sk) and
+the employment-letter call (`ocr_sk`) stay in the orchestrator. Only slip + mutasi +
+match collapse into the `ocr_match` call.
 
 ---
 
-## 2. Hard constraint: `ocr_match` cannot be modified
+## 2. Constraint reversal
 
-`ocr_match` is a fixed, already-deployed service. The only matching endpoint is
-`POST /api/v1/match`, which takes **raw PDFs** (`slips` + `mutations` multipart
-groups), parses them itself (calling `ocr_slip` and `ocr_mutasi`), runs the
-matcher, and returns a `MatchResponse`. There is **no endpoint that accepts
-already-parsed data**. Everything below is shaped by that.
-
-### 2.1 What `/api/v1/match` returns (verified against `ocr_match` source)
-
-`MatchResponse` =
-- `matches[]` — each `MatchPair` carries a **full `ParsedSlip`** (`worker_name`,
-  `institution_name`, `total_paid`, `pokok`, `tax`, `incentive`, `deduction`,
-  `period`, `source_file`, …), a `GajiCredit`, `match_pattern`, `confidence`,
-  `reason`, `amount_diff_*`.
-- `unmatched_slips[]` — full `ParsedSlip` objects.
-- `unmatched_credits[]` — `GajiCredit` objects.
-- `audit` — `slip_count`, `credit_count`, `matched_count`, `months_processed`,
-  `matcher_errors`, `upstream_errors`.
-
-Every input slip appears exactly once across `matches[].slip ∪ unmatched_slips`,
-so the **full slip set is recoverable** from one response.
-
-### 2.2 The mutation caveat that shapes the design
-
-`ocr_match.upstream.extract_mutations` ends with
-`return [GajiCredit(**c) ... if c.get("category") == "Gaji"]` — it calls
-`ocr_mutasi` with all categories internally but **discards everything except
-`Gaji`** before returning. So `THR`, `Bonus`, `Insentif`, and `Lainnya` **never
-appear** in the response.
-
-The orchestrator's income formula (`ocr_orchestrator/income.py`) needs those other
-categories:
-
-```
-monthly_qualifying_income
-  = avg_monthly(Gaji + Insentif) over distinct salary months
-  + total(THR)   / 12
-  + total(Bonus) * bonus_accept_pct / 12
-```
-
-**Therefore:** `ocr_match` can replace the orchestrator's **slip** extraction but
-**not** its mutasi extraction. The orchestrator must keep calling `ocr_mutasi`
-itself to obtain the full all-category credit set.
+The previous draft assumed `ocr_match` could not be modified and returned `Gaji`
+credits only. **That is reversed:** `ocr_match` **will be extended** to (a) stop
+discarding non-`Gaji` credits and (b) pass through the full slip and mutasi upstream
+payloads. The orchestrator design below depends on that change shipping in
+`ocr_match` first.
 
 ---
 
-## 3. Key decisions (from brainstorming)
+## 3. Required `ocr_match` response contract (`POST /api/v1/match`)
 
-1. **Approach: full decouple.** No `ocr_match` imports remain anywhere under
-   `ocr_orchestrator/`. The JSON response is parsed into local types; the two pure
-   date helpers are reimplemented locally.
-2. **Slips sourced from `ocr_match`** in the happy path; the orchestrator's own
-   `ocr_slip` call is removed from the extract stage.
-3. **`ocr_slip` retained as a fallback-only call.** If `ocr_match` is unreachable
-   or errors, the orchestrator calls `ocr_slip/parse` to recover slip data, so the
-   `slip_fallback` income path (zero bank salary credits) and slip-based name
-   resolution survive a matcher outage.
-4. **Degrade, never fail, on `ocr_match` outage.** Matches become empty,
-   `verified_months` empty, a warning is recorded in `audit`; income still computes
-   from bank credits (`bank_unverified`) and the job completes.
-5. **Mutasi double-parse is accepted.** Unavoidable while `ocr_match` is
-   untouchable and income needs all categories. Slips are parsed once.
+Three blocks: full **slip extraction**, full **mutasi extraction** (all categories +
+account/files), and the **match result**. The two extraction blocks are the verbatim
+upstream payloads — maximal passthrough, minimal translation, consistent with
+`ocr_match`'s existing `extra="allow"` philosophy.
+
+```jsonc
+{
+  // ── 1. SLIP EXTRACTION — verbatim ocr_slip /parse response body ──
+  //    Every slip appears here, matched or not (slips can be > 1).
+  "slip_extraction": {
+    "documents": [
+      {
+        "source_file": "string",        // REQUIRED — per-doc key + name resolution
+        "worker_name": "string|null",   // applicant-name resolution
+        "institution_name": "string|null",
+        "total_paid": 0.0,              // income slip_fallback + breakdown
+        "pokok": 0.0,                   // breakdown (slip_only rows)
+        "tax": 0.0,
+        "incentive": 0.0,               // breakdown (slip_only rows)
+        "deduction": 0.0,               // breakdown
+        "other_deduction": 0.0,
+        "period": "YYYY-MM|null",       // month placement for UNMATCHED slips
+        "confidence_notes": [],
+        "extraction_method": "string"
+      }
+    ]
+  },
+
+  // ── 2. MUTASI EXTRACTION — verbatim ocr_mutasi extract-batch response body ──
+  //    credits[] MUST be ALL categories, not Gaji-only.
+  "mutasi_extraction": {
+    "files": [
+      {
+        "filename": "string",           // REQUIRED — per-doc attachment key
+        "account": { "nama": "string|null" }   // REQUIRED — name fallback (passthrough rest)
+      }
+    ],
+    "credits": [
+      {
+        "source_file": "string",
+        "tanggal": "YYYY-MM-DD",        // REQUIRED — month derivation for income
+        "amount": 0.0,                  // REQUIRED — income sums
+        "category": "Gaji|Insentif|THR|Bonus|Lainnya",  // REQUIRED — NOT Gaji-only
+        "keterangan": "string",
+        "type": "CR", "saldo": null, "cbg": null, "page": 0,
+        "confidence": null, "reason": null
+      }
+    ],
+    "audit": {}                         // optional passthrough
+  },
+
+  // ── 3. MATCH RESULT — slip ↔ Gaji pairing (one entry per matched slip) ──
+  "matches": [
+    {
+      "slip":   { "source_file": "string" },          // ≥ source_file
+      "credit": { "month": "YYYY-MM", "tanggal": "YYYY-MM-DD", "amount": 0.0 },
+      "match_pattern": "next_month|same_month|future_month|amount_only"
+    }
+  ],
+
+  "audit": { "slip_count": 0, "credit_count": 0, "matched_count": 0,
+             "months_processed": [], "matcher_errors": [], "upstream_errors": [] }
+}
+```
+
+### 3.1 The two fields the current `ocr_match` does NOT provide
+
+1. **`mutasi_extraction.credits[]` must include ALL categories.** Today
+   `ocr_match/upstream.py:119` does `... if c.get("category") == "Gaji"`. The
+   orchestrator income formula needs `Insentif`, `THR`, `Bonus`:
+   `income = avg(Gaji+Insentif)/mo + THR/12 + Bonus*pct/12`. Drop the filter.
+2. **`mutasi_extraction.files[].account.nama`** — applicant-name fallback (slip →
+   mutasi → sk) and the per-document attachment key.
+
+Everything else `ocr_match` already computes; it only needs to **stop discarding**
+the two upstream payloads and return them.
 
 ---
 
-## 4. Revamped pipeline
+## 4. `ocr_match` changes required (separate, must ship first)
 
-`ocr_orchestrator/pipeline.py` stage flow (tracked stages in `job.stages` keep the
-same names; **verify** is renamed **match**):
+- `ocr_match/upstream.py` — `extract_mutations` must return the **full**
+  extract-batch payload (`files`, all-category `credits`, `audit`), not the
+  `Gaji`-filtered `GajiCredit[]`. Likewise surface the full `ocr_slip` `documents`.
+- `ocr_match/pipeline.py` / `models.py` — extend `MatchResponse` with
+  `slip_extraction` and `mutasi_extraction` blocks (verbatim passthrough). The
+  internal matcher still filters to `Gaji` for pairing; that's independent of what
+  the response carries.
+- No change to `ocr_slip` / `ocr_mutasi` themselves.
 
-| # | Stage | Change |
-|---|---|---|
-| 1 | classify | unchanged — produces buckets (slips, mutasi, sk, ktp, kk) |
-| 2 | extract | `ocr_mutasi` (all categories) + `ocr_sk` concurrently. **`ocr_slip` removed from this stage.** |
-| 3 | match (was *verify*) | call `ocr_match`; on failure, fallback to `ocr_slip`. Produces `slip_docs`, `matches`, `verified_months`. |
-| 4 | aggregate | unchanged logic; `slip_docs` now originates from stage 3 |
-| 5 | fmv | unchanged |
-| 6 | decide | unchanged |
-| 7 | assemble | unchanged; applicant-name resolution reads `slip_docs` from stage 3 |
-
-### 4.1 Match stage detail
-
-```
-slip_pdfs  = buckets.slips     # raw (filename, bytes) from classify
-mutasi_pdfs = buckets.mutasi   # raw (filename, bytes) from classify
-
-try:
-    resp = await upstream.match_documents(slip_pdfs, mutasi_pdfs, password=password)
-    slip_docs       = resp["unmatched_slips"] + [m["slip"] for m in resp["matches"]]
-    matches         = [MatchView(...) for m in resp["matches"]]
-    verified_months = { mv.credit.month for mv in matches if mv.credit.month }
-    mark stage "completed"
-except (UpstreamUnreachableError, UpstreamHttpError) as exc:
-    audit.warnings.append(f"ocr_match unreachable; slips via ocr_slip fallback: {exc}")
-    slip_docs       = await upstream.parse_slips(slip_pdfs, password=password)  # fallback
-    matches         = []
-    verified_months = set()
-    mark stage "completed"   # degraded, not failed
-```
-
-- `MatchView.credit.month` falls back to `credit.tanggal[:7]` when the response's
-  `month` field is absent.
-- If the `ocr_slip` fallback **also** fails, catch it too: `slip_docs = []`, append
-  a second warning, still complete the stage. Income then computes from bank
-  credits alone (or yields `basis="none"` if there are none).
-- The single orchestrator `password` is forwarded as both `slip_password` and
-  `mutation_password` to `ocr_match` (its endpoint takes them separately).
-
-### 4.2 Re-ordering: slip → `doc_results` attachment
-
-Today the extract stage attaches per-slip extraction onto `doc_results`
-(`d.extracted = slip_by_file.get(d.filename)`). Since slip data now arrives in the
-**match** stage, this attachment moves to **after** stage 3. The keying is
-unchanged: `slip_by_file` is built with the existing `_slip_base(source_file)`
-helper, which still works because `ocr_match`'s `ParsedSlip.source_file` is
-`ocr_slip`'s same rewritten value. Mutasi/sk attachment stays in the extract stage.
+*(This section is the `ocr_match` contract requirement. A full `ocr_match`
+implementation plan is its own task; this spec owns only the orchestrator side and
+the contract it depends on.)*
 
 ---
 
-## 5. Components changed
+## 5. Orchestrator changes
 
 | File | Change |
 |---|---|
-| `ocr_orchestrator/upstream.py` | **Add** `match_documents(slip_pdfs, mutasi_pdfs, *, password)` → `POST {ocr_match_url}/api/v1/match` (multipart `slips`, `mutations`, `slip_password`, `mutation_password`), returns parsed JSON dict; raises the existing `UpstreamUnreachableError` / `UpstreamHttpError`. **Keep** `parse_slips` (now fallback-only). |
-| `ocr_orchestrator/verify.py` | Rewritten as the **match adapter**: `MatchResponse` JSON → `(slip_docs: list[dict], matches: list[MatchView], verified_months: set[str])`. **No `ocr_match` imports.** (File may be renamed `match.py`; keep `verify.py` if it reduces churn — implementer's call, noted in plan.) |
-| `ocr_orchestrator/models.py` | **Add** local `MatchView` with nested `slip.source_file` and `credit` (`month`, `tanggal`, `amount`) plus `match_pattern`. Plain Pydantic; only the fields `monthly.py` and `_match_pair_view` read. |
-| `ocr_orchestrator/slip_dates.py` | **New.** Local `_slip_month` / `_credit_month` (pure date derivation copied out of `ocr_match.pipeline` — slip `period` → filename month/year regex → `YYYY-MM`; credit `tanggal[:7]`). This is slip *placement*, not matching, so goal B is preserved. |
-| `ocr_orchestrator/monthly.py` | Drop `from ocr_match...` imports; use local `slip_dates._slip_month` and iterate `MatchView`. `slip_docs` stay plain dicts (same keys `ocr_slip` emits). |
-| `ocr_orchestrator/pipeline.py` | Rename verify→match stage; remove `ocr_slip` from extract; wire match stage + `ocr_slip` fallback; move slip `doc_results` attachment after match. |
-| `ocr_orchestrator/config.py` | **Add** `ocr_match_url: str = "http://127.0.0.1:5005"` and `match_timeout_s: float` (generous — this call runs full OCR+LLM; default to `upstream_timeout_s`). **Keep** `ocr_slip_url` (fallback). **Update docstring:** orchestrator no longer imports `ocr_match`, so remove the note about `ocr_match.config` requiring `AZURE_OPENAI_*` keys. |
-| `.env.example` | `OCR_MATCH_URL` already present; confirm and document that the orchestrator now consumes it. |
+| `upstream.py` | **Add** `match_documents(slip_pdfs, mutasi_pdfs, *, password)` → `POST {ocr_match_url}/api/v1/match`, returns parsed JSON; raises existing `Upstream*Error`. **Delete** `parse_slips` and `extract_mutations` outright (D1 — no fallback). |
+| `verify.py` → match adapter | `MatchResponse` JSON → `(slip_docs, credits, mut_files, matches: list[MatchView], verified_months)`. No `ocr_match` imports. |
+| `models.py` | local `MatchView` (`.slip.source_file`, `.credit.month/tanggal/amount`, `.match_pattern`). |
+| `slip_dates.py` (new) | local `_slip_month` / `_credit_month` (pure date helpers, copied from `ocr_match.pipeline`) — used only to place **unmatched** slips. |
+| `monthly.py` | drop `ocr_match` imports; use `slip_dates._slip_month`, iterate `MatchView`; `slip_docs`/`credits` stay plain dicts. |
+| `pipeline.py` | restructure stages (§6): extract = `ocr_sk` only; new **acquire** stage replaces extract-of-slip/mutasi + verify; attach slip/mutasi to `doc_results` after it. |
+| `config.py` | add `ocr_match_url` (`…:5005`) + `match_timeout_s` (generous — full OCR+LLM). Drop the `AZURE_OPENAI_*` note. **Remove** `ocr_slip_url` / `ocr_mutasi_url` — no longer consumed (D1). |
 
-`compute_income`, `build_monthly_breakdown` signatures, `decision.py`, `identity.py`,
-`income.py`, `fmv`/`decide` stages: **unchanged**.
-
----
-
-## 6. Error handling
-
-- `match_documents` mirrors the existing upstream clients: `httpx.TransportError`
-  → `UpstreamUnreachableError`; `>=400` → `UpstreamHttpError`.
-- Match-stage outage path is §4.1: warn + `ocr_slip` fallback + complete (degraded).
-- The match stage never fails the job (only the classifier stage fails jobs, per
-  the existing design). The `run_job` backstop still converts any unexpected
-  exception into a failed job.
+The data the adapter extracts maps 1:1 onto today's consumers, unchanged:
+- `credits` ← `mutasi_extraction.credits` → `compute_income`, `build_monthly_breakdown`
+- `slip_docs` ← `slip_extraction.documents` → `slip_total_paids`, breakdown, name
+- `mut_files` ← `mutasi_extraction.files` → `doc_results` attach + `account.nama` name
+- `matches` / `verified_months` ← `matches` → verification + breakdown homing
 
 ---
 
-## 7. Parsing cost (explicit)
+## 6. Pipeline stages
 
-- **Slips: parsed once** — inside `ocr_match` (happy path) or `ocr_slip` (fallback),
-  never both.
-- **Mutasi: parsed twice** — the orchestrator's own `ocr_mutasi` all-category call
-  **plus** `ocr_match`'s internal `Gaji`-only pass. Unavoidable under §2; accepted.
-- *Optional future optimization (not in this spec):* the match call and the
-  orchestrator's mutasi extract both need only raw PDFs, so they could run
-  concurrently to hide the second mutasi parse. Kept sequential here to preserve
-  the clean per-stage `job.stages` tracking.
+| # | Stage | Change |
+|---|---|---|
+| 1 | classify | unchanged → buckets (slips, mutasi, sk, ktp, kk) |
+| 2 | extract | **`ocr_sk` only** now (slip + mutasi removed from here) |
+| 3 | acquire (was *verify*) | one `ocr_match` call → `slip_docs`, `credits`, `mut_files`, `matches`, `verified_months`; then attach slip + mutasi onto `doc_results` |
+| 4 | aggregate | unchanged logic; inputs now all come from stage 3 |
+| 5 | fmv | unchanged |
+| 6 | decide | unchanged |
+| 7 | assemble | unchanged; name resolution reads stage-3 `slip_docs` + `mut_files[].account` |
 
----
-
-## 8. Testing
-
-- `tests/test_upstream.py` — `match_documents`: success, `UpstreamUnreachableError`,
-  `UpstreamHttpError` (httpx mocked, same pattern as existing upstream tests).
-  `parse_slips` fallback path remains covered.
-- `tests/test_verify.py` (match adapter) — sample `MatchResponse` JSON →
-  asserts `slip_docs` (union of matched + unmatched), `MatchView` list, and
-  `verified_months`; `month` fallback to `tanggal[:7]`.
-- `tests/test_pipeline.py` — patch `upstream.match_documents`:
-  - happy path: slips come from `ocr_match`; `ocr_slip` **not** called; income +
-    breakdown correct.
-  - degrade path: `match_documents` raises → `upstream.parse_slips` fallback is
-    called; job `completed`; income `bank_unverified`; warning present.
-  - both-fail path: `match_documents` and `parse_slips` raise → `slip_docs` empty;
-    job still `completed`.
-- `tests/test_monthly.py` — construct `MatchView`s (not `ocr_match.MatchPair`);
-  assert breakdown rows unchanged for equivalent inputs.
-- `tests/test_slip_dates.py` (new) — `_slip_month` (period > filename regex >
-  `YYYY-MM`) and `_credit_month`.
-- **Decoupling guard:** a test (or CI grep) asserting **zero `import ocr_match`**
-  anywhere under `ocr_orchestrator/` (including `tests/`).
+`ocr_sk` (stage 2) and the `ocr_match` call (stage 3) are independent and may run
+concurrently later; kept as distinct tracked stages here for clarity.
 
 ---
 
-## 9. Out of scope
+## 7. Multiple slips & the unmatched-slip rule
 
-- Any change to `ocr_match` (e.g. adding a parsed-input endpoint) — explicitly
-  forbidden by §2.
-- The income formula, `fmv`, `decide`, `identity`, and frontend wiring.
-- Eliminating the mutasi double-parse (would require touching `ocr_match`).
-- Concurrency optimization of match vs extract (§7).
+Slips (and mutasi files) can be many; the response arrays carry N of each, each slip
+keyed by `source_file`. Matching is per-slip; the breakdown aggregates **by month**
+(two slips in one month sum into one row; slips across months yield separate rows).
+
+**Decision (confirmed): unmatched slips still contribute** — a slip with a derivable
+month (`period` → filename) creates a `slip_only`, unverified month row even when no
+bank `Gaji` credit pairs with it. This is preserved precisely because `ocr_match`
+returns **every** slip in `slip_extraction.documents`, not just the matched ones.
+
+---
+
+## 8. Degrade behavior on `ocr_match` outage (decided: D1)
+
+The single front door makes `ocr_match` carry slips **and** mutasi **and** matching,
+so an `ocr_match` outage loses *all* income inputs at once. **Decision: D1 — degrade
+to no-income, the job still completes.**
+
+- On `UpstreamUnreachableError` / `UpstreamHttpError` from `match_documents`: the
+  acquire stage logs it, appends a warning to `audit`, sets `slip_docs=[]`,
+  `credits=[]`, `mut_files=[]`, `matches=[]`, `verified_months=∅`, and marks the
+  stage `completed` (degraded, not failed).
+- `compute_income` then yields `basis="none"` with a warning; FMV and decide still
+  run on whatever inputs exist. Only the classifier stage fails a job; the `run_job`
+  backstop still converts any *unexpected* exception into a failed job.
+- The orchestrator keeps **no** `ocr_slip` / `ocr_mutasi` fallback clients — they are
+  removed entirely (§5). `ocr_match` is the sole source of slip + mutasi data.
+
+---
+
+## 9. Testing
+
+- `test_upstream.py` — `match_documents`: success, unreachable, http-error.
+- match-adapter test — sample response → `slip_docs` / `credits` / `mut_files` /
+  `MatchView[]` / `verified_months`; `credit.month` fallback to `tanggal[:7]`;
+  multiple slips incl. an unmatched one → `slip_only` row.
+- `test_pipeline.py` — happy path (no `ocr_slip`/`ocr_mutasi` calls made); §8 D1
+  degrade path (`match_documents` raises → job `completed`, `basis="none"`, warning).
+- `test_monthly.py` — `MatchView` inputs; rows unchanged for equivalent data.
+- `test_slip_dates.py` (new) — `_slip_month` / `_credit_month`.
+- **Decoupling guard** — assert zero `import ocr_match` under `ocr_orchestrator/`.
+
+---
+
+## 10. Out of scope
+
+- The `ocr_match` implementation itself (§4 is the contract; its build is a separate
+  plan). Income formula, `fmv`, `decide`, `identity`, frontend — unchanged.
+- Concurrency of `ocr_sk` vs the `ocr_match` call (§6).
