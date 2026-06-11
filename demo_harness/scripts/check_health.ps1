@@ -8,6 +8,7 @@ $targets = @{
     "ocr_sk         :5002" = "http://127.0.0.1:5002/health"
     "ocr_slip       :5003" = "http://127.0.0.1:5003/health"
     "ocr_mutasi     :5004" = "http://127.0.0.1:5004/health"
+    "ocr_match      :5005" = "http://127.0.0.1:5005/health"
     "orchestrator   :8500" = "http://127.0.0.1:8500/health"
 }
 foreach ($name in $targets.Keys) {

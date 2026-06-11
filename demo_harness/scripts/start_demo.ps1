@@ -17,11 +17,14 @@ Start-Svc "ollama"        "ollama serve"
 Start-Svc "llm-adapter"   "$venv\uvicorn demo_harness.llm_adapter.app:app --port 4000"
 # 3. OCR shim (PaddleOCR stand-in) :8060
 Start-Svc "ocr-shim"      "$venv\uvicorn demo_harness.ocr_shim.app:app --port 8060"
-# 4. The five NILAM services (renumbered ports)
+# 4. The five NILAM OCR services (renumbered ports). ocr_match is the
+#    orchestrator's single front door: it calls ocr_slip + ocr_mutasi + the LLM
+#    internally, so it must be up before the orchestrator runs.
 Start-Svc "ocr_classifier" "$venv\uvicorn ocr_classifier.api:app --port 5001"
 Start-Svc "ocr_sk"         "$venv\uvicorn ocr_sk.app:app --port 5002"
 Start-Svc "ocr_slip"       "$venv\uvicorn ocr_slip.app:app --port 5003"
 Start-Svc "ocr_mutasi"     "$venv\uvicorn ocr_mutasi.api:app --port 5004"
+Start-Svc "ocr_match"      "$venv\uvicorn ocr_match.api:app --port 5005"
 # 5. Orchestrator :8500
 Start-Svc "ocr_orchestrator" "$venv\uvicorn ocr_orchestrator.api:app --port 8500"
 

@@ -38,13 +38,17 @@ See the design spec: `docs/superpowers/specs/2026-06-11-local-demo-orchestrator-
    AZURE_OPENAI_API_VERSION=2025-01-01-preview
    LLM_REQUEST_TIMEOUT_S=300
 
-   # Orchestrator upstream registry — MUST be the renumbered 5001-5004 ports.
-   # (ocr_orchestrator/config.py still hard-codes stale 8000-8300 defaults, so
-   #  these keys are required or it will call the wrong ports.)
+   # Service upstream registry (renumbered 5001-5005 ports), set explicitly:
+   #  - The orchestrator (8500) calls classifier (5001), sk (5002), and
+   #    ocr_match (5005) — its single front door for slip + mutasi + match.
+   #    config.py already defaults to those three ports.
+   #  - ocr_match (5005) in turn calls ocr_slip (5003) + ocr_mutasi (5004), so
+   #    those two URLs are consumed by ocr_match, not the orchestrator.
    OCR_CLASSIFIER_URL=http://127.0.0.1:5001
    OCR_SK_URL=http://127.0.0.1:5002
    OCR_SLIP_URL=http://127.0.0.1:5003
    OCR_MUTASI_URL=http://127.0.0.1:5004
+   OCR_MATCH_URL=http://127.0.0.1:5005
    UPSTREAM_TIMEOUT_S=300
 
    # Optional: enable scanned-page OCR in the shim (needs pytesseract+Pillow)
@@ -86,7 +90,11 @@ LLM call) — treat it as a scripted demo and keep bundles small.
 
 ## Notes / limitations
 
-- `ocr_match` (`:5005`) is **not** run — the orchestrator imports its matcher.
+- `ocr_match` (`:5005`) **is** run — the orchestrator no longer imports its
+  matcher; it calls `ocr_match` over HTTP as its single front door for slip +
+  mutasi extraction and matching. `ocr_match` in turn calls `ocr_slip` +
+  `ocr_mutasi` and the LLM adapter, so verified income depends on the LLM (and
+  thus Ollama) being up.
 - `ocr_slip`'s LLM fallback hard-codes a 60s timeout; prefer text-layer slips so
   it parses via pypdfium2 and skips the LLM.
 - In-memory job store: single uvicorn worker; jobs are lost on restart.
