@@ -14,7 +14,7 @@ from typing import Optional
 
 from .models import ApplicationResult, JobStage, JobState, StageState
 
-_DEFAULT_STAGES = ("classify", "extract", "verify", "aggregate", "fmv", "decide")
+_DEFAULT_STAGES = ("classify", "extract", "acquire", "aggregate", "fmv", "decide")
 
 
 @dataclass

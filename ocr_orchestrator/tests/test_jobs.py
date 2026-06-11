@@ -9,7 +9,7 @@ class TestJobStore(unittest.IsolatedAsyncioTestCase):
         job = await store.create()
         self.assertEqual(job.status, "pending")
         self.assertEqual([s.name for s in job.stages],
-                         ["classify", "extract", "verify", "aggregate", "fmv", "decide"])
+                         ["classify", "extract", "acquire", "aggregate", "fmv", "decide"])
         fetched = await store.get(job.id)
         self.assertIs(fetched, job)
 
