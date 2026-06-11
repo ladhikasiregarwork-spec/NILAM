@@ -60,5 +60,46 @@ class TestPredictFairValue(unittest.IsolatedAsyncioTestCase):
                 await upstream.predict_fair_value({"luas_tanah": 80, "luas_bangunan": 50})
 
 
+class _FakeMultipartClient:
+    def __init__(self, resp=None, exc=None):
+        self._resp = resp
+        self._exc = exc
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc_info):
+        return False
+
+    async def post(self, url, files=None, data=None):
+        if self._exc:
+            raise self._exc
+        return self._resp
+
+
+def _patch_multipart(resp=None, exc=None):
+    return mock.patch.object(upstream.httpx, "AsyncClient",
+                             lambda *a, **k: _FakeMultipartClient(resp=resp, exc=exc))
+
+
+class TestMatchDocuments(unittest.IsolatedAsyncioTestCase):
+    async def test_success_returns_json(self):
+        body = {"matches": [], "slip_extraction": {"documents": []},
+                "mutasi_extraction": {"files": [], "credits": [], "audit": {}}}
+        with _patch_multipart(resp=_FakeResp(200, body)):
+            out = await upstream.match_documents([("s.pdf", b"a")], [("m.pdf", b"b")])
+        self.assertIn("mutasi_extraction", out)
+
+    async def test_transport_error_raises_unreachable(self):
+        with _patch_multipart(exc=httpx.ConnectError("refused")):
+            with self.assertRaises(upstream.UpstreamUnreachableError):
+                await upstream.match_documents([("s.pdf", b"a")], [("m.pdf", b"b")])
+
+    async def test_4xx_raises_http_error(self):
+        with _patch_multipart(resp=_FakeResp(400, text="need both groups")):
+            with self.assertRaises(upstream.UpstreamHttpError):
+                await upstream.match_documents([("s.pdf", b"a")], [("m.pdf", b"b")])
+
+
 if __name__ == "__main__":
     unittest.main()

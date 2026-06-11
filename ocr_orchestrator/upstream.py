@@ -1,8 +1,10 @@
-"""Async httpx clients for the four OCR services.
+"""Async httpx clients for the orchestrator's upstreams.
 
-Each function takes already-read ``(filename, bytes)`` tuples and returns the
-loosely-typed JSON the orchestrator pipeline consumes. We never re-parse PDFs
-here; the services own all PDF/OCR I/O.
+The orchestrator parses no PDFs itself: ``ocr_match`` is the single front door for
+slip + mutasi extraction AND matching, ``ocr_classifier`` labels docs, ``ocr_sk``
+parses employment letters, and ``house_fair_market_value`` prices collateral. Each
+function takes already-read ``(filename, bytes)`` tuples (or a JSON body) and
+returns the loosely-typed JSON the pipeline consumes.
 """
 from __future__ import annotations
 
@@ -59,38 +61,38 @@ async def classify_documents(pdfs: list[tuple[str, bytes]]) -> list[dict[str, An
     return payload.get("results", [])
 
 
-async def parse_slips(
-    pdfs: list[tuple[str, bytes]], password: str | None = None
-) -> list[dict[str, Any]]:
-    """POST slips to ocr_slip:/parse. Returns ``documents[]`` (English-keyed
-    per-slip dicts: ``worker_name``, ``total_paid``, ``period``, ...)."""
-    s = get_settings()
-    # ocr_slip's /parse takes `ocr` and `password` as multipart Form fields,
-    # not query params — send them in `data`.
-    data = {"ocr": "auto"}
-    if password:
-        data["password"] = password
-    payload = await _post(
-        "ocr_slip", f"{s.ocr_slip_url}/parse",
-        files=_files(pdfs), data=data,
-    )
-    return payload.get("documents", [])
-
-
-async def extract_mutations(
-    pdfs: list[tuple[str, bytes]], password: str | None = None
+async def match_documents(
+    slip_pdfs: list[tuple[str, bytes]],
+    mutasi_pdfs: list[tuple[str, bytes]],
+    *,
+    password: str | None = None,
 ) -> dict[str, Any]:
-    """POST bank statements to ocr_mutasi:/extract-batch. Returns the FULL batch
-    payload (``files[]``, ``credits[]`` across all categories, ``audit``).
+    """POST slip + mutasi PDFs to ocr_match:/api/v1/match. Returns the full
+    MatchResponse JSON: ``matches``, ``slip_extraction`` (full ocr_slip body),
+    ``mutasi_extraction`` (full ocr_mutasi body, all categories), ``audit``.
 
-    Unlike ocr_match (Gaji-only), the orchestrator needs every category for the
-    income formula, plus ``files[].account.nama`` for applicant-name fallback."""
+    The single orchestrator ``password`` is forwarded as both ``slip_password`` and
+    ``mutation_password`` (ocr_match takes them separately)."""
     s = get_settings()
-    data = {"password": password} if password else {}
-    return await _post(
-        "ocr_mutasi", f"{s.ocr_mutasi_url}/api/v1/mutations/extract-batch",
-        files=_files(pdfs), data=data, params={"classify": "true"},
+    url = f"{s.ocr_match_url}/api/v1/match"
+    files = (
+        [("slips", (name, data, "application/pdf")) for name, data in slip_pdfs]
+        + [("mutations", (name, data, "application/pdf")) for name, data in mutasi_pdfs]
     )
+    data: dict[str, str] = {}
+    if password:
+        data["slip_password"] = password
+        data["mutation_password"] = password
+    try:
+        async with httpx.AsyncClient(timeout=s.match_timeout_s) as client:
+            r = await client.post(url, files=files, data=data)
+    except httpx.TransportError as exc:
+        raise UpstreamUnreachableError(
+            f"ocr_match not reachable at {url}: {exc}"
+        ) from exc
+    if r.status_code >= 400:
+        raise UpstreamHttpError("ocr_match", r.status_code, r.text)
+    return r.json()
 
 
 async def parse_sk(
