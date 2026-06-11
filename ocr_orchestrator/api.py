@@ -242,7 +242,10 @@ _UPLOAD_PAGE = """<!doctype html>
  label.drop.has{border-color:#059669;background:#f0fdf4}
  input[type=file]{display:none}
  .row{display:flex;gap:16px;align-items:center;margin-top:14px;flex-wrap:wrap}
- input[type=number],input[type=password]{padding:8px;border:1px solid #e5e7eb;border-radius:6px;font:inherit}
+ input[type=number],input[type=password],input[type=text]{padding:8px;border:1px solid #e5e7eb;border-radius:6px;font:inherit}
+ fieldset.grp{border:1px solid #e5e7eb;border-radius:8px;margin:14px 0 0;padding:8px 14px 14px}
+ fieldset.grp legend{font-weight:600;font-size:13px;padding:0 6px}
+ .opt{font-weight:400;color:#64748b;font-size:12px}
  button{font:inherit;font-weight:600;padding:10px 18px;border:none;border-radius:6px;background:#2563eb;color:#fff;cursor:pointer}
  button:disabled{background:#94a3b8}
  #status{margin:10px 0;font-size:13px}
@@ -260,6 +263,24 @@ classifies each file, extracts what it can, and returns a monthly income figure.
  <div class="row">
    <label>Bonus accept %: <input type="number" id="pct" min="0" max="100" step="1" value="0" style="width:80px"></label>
    <label>PDF password: <input type="password" id="pw" placeholder="optional"></label>
+ </div>
+ <fieldset class="grp"><legend>Collateral <span class="opt">— optional; needs both luas_tanah + luas_bangunan to price FMV</span></legend>
+  <div class="row">
+   <label>Luas tanah m²: <input type="number" id="lt" min="0" step="0.01" placeholder="80" style="width:100px"></label>
+   <label>Luas bangunan m²: <input type="number" id="lb" min="0" step="0.01" placeholder="50" style="width:100px"></label>
+   <label>Kode pos: <input type="text" id="kp" placeholder="40123" style="width:100px"></label>
+   <label>Kelurahan: <input type="text" id="kl" placeholder="antapani kidul" style="width:160px"></label>
+   <label>Appraisal month: <input type="number" id="am" min="200001" max="209912" placeholder="202606" style="width:110px"></label>
+  </div>
+ </fieldset>
+ <fieldset class="grp"><legend>Loan <span class="opt">— optional; needs all three for the approve/refer decision</span></legend>
+  <div class="row">
+   <label>Loan amount: <input type="number" id="la" min="0" step="1000000" placeholder="500000000" style="width:140px"></label>
+   <label>Tenor months: <input type="number" id="tn" min="1" step="1" placeholder="180" style="width:100px"></label>
+   <label>Annual interest: <input type="number" id="ir" min="0" step="0.001" placeholder="0.105" style="width:100px"></label>
+  </div>
+ </fieldset>
+ <div class="row">
    <button type="submit" id="go">Submit</button>
  </div>
  <div id="status"></div>
@@ -285,6 +306,9 @@ f.addEventListener('submit',async e=>{e.preventDefault();
  const fd=new FormData();for(const x of fi.files)fd.append('files',x,x.name);
  fd.append('bonus_accept_pct',(Number(document.getElementById('pct').value)||0)/100);
  const pw=document.getElementById('pw').value;if(pw)fd.append('password',pw);
+ const add=(id,key)=>{const v=document.getElementById(id).value.trim();if(v!=='')fd.append(key,v);};
+ add('lt','luas_tanah');add('lb','luas_bangunan');add('kp','kode_pos');add('kl','kelurahan');add('am','appraisal_month');
+ add('la','loan_amount');add('tn','tenor_months');add('ir','annual_interest_rate');
  go.disabled=true;st.textContent='Submitting…';stages.innerHTML='';
  try{
    const r=await fetch('/api/v1/applications',{method:'POST',body:fd});
