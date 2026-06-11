@@ -9,7 +9,10 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from .models import EmploymentView, IdentityView, KtpView
+from .models import (
+    AgunanInput, AgunanView, CollateralInput, EmploymentView, FmvResult,
+    IdentityView, KtpView,
+)
 
 
 def _search(node: Any, keys: tuple[str, ...]) -> Optional[str]:
@@ -45,6 +48,26 @@ def _f(value: Any) -> Optional[float]:
 def project_identity(name: Optional[str]) -> IdentityView:
     """User Information section. Only ktp.nama is filled in v1 (D2 stub)."""
     return IdentityView(ktp=KtpView(nama=name))
+
+
+def project_agunan(
+    collateral: Optional[CollateralInput],
+    agunan: Optional[AgunanInput],
+    fmv: Optional[FmvResult],
+) -> AgunanView:
+    """NPW & Informasi Agunan: echo the inputs, set npw = fmv.fair_value."""
+    return AgunanView(
+        harga_rumah=agunan.harga_rumah if agunan else None,
+        luas_tanah=collateral.luas_tanah if collateral else None,
+        luas_bangunan=collateral.luas_bangunan if collateral else None,
+        provinsi=agunan.provinsi if agunan else None,
+        kota_kab=agunan.kota_kab if agunan else None,
+        kecamatan=agunan.kecamatan if agunan else None,
+        kelurahan=collateral.kelurahan if collateral else None,
+        kode_pos=collateral.kode_pos if collateral else None,
+        npw=fmv.fair_value if fmv else None,
+        fmv=fmv,
+    )
 
 
 def project_employment(sk_response: Any) -> Optional[EmploymentView]:

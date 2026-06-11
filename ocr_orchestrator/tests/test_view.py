@@ -2,7 +2,7 @@
 import unittest
 
 from ocr_orchestrator import view
-from ocr_orchestrator.models import EmploymentView, IdentityView
+from ocr_orchestrator.models import AgunanInput, AgunanView, CollateralInput, FmvResult, EmploymentView, IdentityView
 
 
 class TestProjectEmployment(unittest.TestCase):
@@ -54,3 +54,28 @@ class TestProjectIdentity(unittest.TestCase):
     def test_none_name(self):
         idv = view.project_identity(None)
         self.assertIsNone(idv.ktp.nama)
+
+
+class TestProjectAgunan(unittest.TestCase):
+    def _fmv(self):
+        return FmvResult(land_value=3.0, building_value=2.0, fair_value=5.0,
+                         location_matched=True, backend="linear")
+
+    def test_full(self):
+        col = CollateralInput(luas_tanah=96.0, luas_bangunan=45.0,
+                              kode_pos="16969", kelurahan="Bojong Kulur")
+        ag = AgunanInput(provinsi="Jawa Barat", kota_kab="Bogor",
+                         kecamatan="Bojong Kulur", harga_rumah=610_000_000.0)
+        out = view.project_agunan(col, ag, self._fmv())
+        self.assertEqual(out.harga_rumah, 610_000_000.0)
+        self.assertEqual(out.luas_tanah, 96.0)
+        self.assertEqual(out.kelurahan, "Bojong Kulur")
+        self.assertEqual(out.provinsi, "Jawa Barat")
+        self.assertEqual(out.npw, 5.0)               # = fmv.fair_value
+        self.assertEqual(out.fmv.fair_value, 5.0)
+
+    def test_no_fmv_npw_null(self):
+        out = view.project_agunan(None, None, None)
+        self.assertIsNone(out.npw)
+        self.assertIsNone(out.harga_rumah)
+        self.assertIsNone(out.luas_tanah)

@@ -168,6 +168,28 @@ class FmvResult(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class AgunanInput(BaseModel):
+    """Agunan display fields the orchestrator echoes (not FMV inputs)."""
+    provinsi: Optional[str] = None
+    kota_kab: Optional[str] = None
+    kecamatan: Optional[str] = None
+    harga_rumah: Optional[float] = None
+
+
+class AgunanView(BaseModel):
+    """NPW & Informasi Agunan section. npw == fmv.fair_value."""
+    harga_rumah: Optional[float] = None
+    luas_tanah: Optional[float] = None
+    luas_bangunan: Optional[float] = None
+    provinsi: Optional[str] = None
+    kota_kab: Optional[str] = None
+    kecamatan: Optional[str] = None
+    kelurahan: Optional[str] = None
+    kode_pos: Optional[str] = None
+    npw: Optional[float] = None
+    fmv: Optional[FmvResult] = None
+
+
 class CheckResult(BaseModel):
     """One decision check (LTV or DSR). ``value`` is None when undefined."""
     name: str
