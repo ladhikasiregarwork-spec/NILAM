@@ -11,9 +11,10 @@ from collections import defaultdict
 from typing import Any, Optional
 
 from .models import (
-    AgunanInput, AgunanView, CollateralInput, CreditView, DecisionResult,
-    EmploymentView, FmvResult, IdentityView, IncomeBreakdown, InstallmentView,
-    KtpView, MatchingView, RekapRow, SlipView,
+    AgunanInput, AgunanView, BankStatementView, CollateralInput, CreditView,
+    DecisionResult, EmploymentView, FmvResult, IdentityView, IncomeBreakdown,
+    InstallmentView, KlasifikasiPemasukan, KtpView, MatchingView, RekapRow,
+    SlipView,
 )
 from .slip_dates import credit_month, slip_month
 
@@ -210,3 +211,25 @@ def project_rekap(
             income_slip=income_slip, potongan=potongan,
         ))
     return rows
+
+
+def project_bank_statement(credits: list[dict[str, Any]]) -> BankStatementView:
+    """Bank Statement: classified credits + totals (debit ledger deferred, D5)."""
+    kl = KlasifikasiPemasukan()
+    total_kredit = 0.0
+    views: list[CreditView] = []
+    for c in credits:
+        amount = _f(c.get("amount")) or 0.0
+        total_kredit += amount
+        cat = c.get("category")
+        if cat == "Gaji":
+            kl.gaji += amount
+        elif cat == "THR":
+            kl.thr += amount
+        elif cat == "Bonus":
+            kl.bonus += amount
+        views.append(project_credit(c))
+    return BankStatementView(
+        klasifikasi=kl, total_kredit=total_kredit, total_debet=0.0,
+        n_transaksi=len(credits), credits=views,
+    )

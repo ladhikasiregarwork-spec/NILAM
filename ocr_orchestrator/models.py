@@ -178,6 +178,21 @@ class MatchingView(BaseModel):
     salary_slip: list[SlipView] = Field(default_factory=list)
 
 
+class KlasifikasiPemasukan(BaseModel):
+    gaji: float = 0.0
+    thr: float = 0.0
+    bonus: float = 0.0
+    tunjangan_cuti: float = 0.0
+
+
+class BankStatementView(BaseModel):
+    klasifikasi: KlasifikasiPemasukan = Field(default_factory=KlasifikasiPemasukan)
+    total_kredit: float = 0.0
+    total_debet: float = 0.0
+    n_transaksi: int = 0
+    credits: list[CreditView] = Field(default_factory=list)
+
+
 class CollateralInput(BaseModel):
     """Collateral description for the FMV call (echoed back in the result)."""
     luas_tanah: float

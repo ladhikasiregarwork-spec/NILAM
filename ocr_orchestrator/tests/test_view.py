@@ -8,6 +8,7 @@ from ocr_orchestrator.models import (  # extend the model imports
     DecisionResult, InstallmentView, IncomeBreakdown,
 )
 from ocr_orchestrator.models import CreditView, MatchingView, RekapRow, SlipView
+from ocr_orchestrator.models import BankStatementView
 
 
 class TestProjectEmployment(unittest.TestCase):
@@ -186,3 +187,24 @@ class TestProjectMatching(unittest.TestCase):
                    _credit("Insentif", 500.0, "2026-03-10")]
         rows = view.project_rekap(credits, [], [])
         self.assertEqual(rows[0].bonus_mutasi, 1_500.0)
+
+
+class TestProjectBankStatement(unittest.TestCase):
+    def test_totals_and_klasifikasi(self):
+        credits = [_credit("Gaji", 14_598_876.0, "2026-03-25"),
+                   _credit("THR", 33_042_624.0, "2026-03-05"),
+                   _credit("Bonus", 54_933_362.0, "2026-03-17"),
+                   _credit("Insentif", 1_000.0, "2026-03-17")]
+        bs = view.project_bank_statement(credits)
+        self.assertEqual(bs.klasifikasi.gaji, 14_598_876.0)
+        self.assertEqual(bs.klasifikasi.thr, 33_042_624.0)
+        self.assertEqual(bs.klasifikasi.bonus, 54_933_362.0)
+        self.assertEqual(bs.n_transaksi, 4)
+        self.assertEqual(bs.total_kredit, 14_598_876.0 + 33_042_624.0 + 54_933_362.0 + 1_000.0)
+        self.assertEqual(bs.total_debet, 0.0)          # debits deferred (D5)
+        self.assertEqual(len(bs.credits), 4)
+
+    def test_empty(self):
+        bs = view.project_bank_statement([])
+        self.assertEqual(bs.n_transaksi, 0)
+        self.assertEqual(bs.total_kredit, 0.0)
