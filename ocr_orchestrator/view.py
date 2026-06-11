@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from .models import EmploymentView
+from .models import EmploymentView, IdentityView, KtpView
 
 
 def _search(node: Any, keys: tuple[str, ...]) -> Optional[str]:
@@ -40,6 +40,11 @@ def _f(value: Any) -> Optional[float]:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def project_identity(name: Optional[str]) -> IdentityView:
+    """User Information section. Only ktp.nama is filled in v1 (D2 stub)."""
+    return IdentityView(ktp=KtpView(nama=name))
 
 
 def project_employment(sk_response: Any) -> Optional[EmploymentView]:

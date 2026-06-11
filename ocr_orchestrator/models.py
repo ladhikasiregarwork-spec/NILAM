@@ -44,6 +44,32 @@ class EmploymentView(BaseModel):
     start_date: Optional[str] = None
 
 
+class KtpView(BaseModel):
+    nama: Optional[str] = None
+    nik: Optional[str] = None
+    gender: Optional[str] = None
+    tgl_lahir: Optional[str] = None
+    age: Optional[int] = None
+
+
+class AnggotaKeluarga(BaseModel):
+    nama: Optional[str] = None
+    nik: Optional[str] = None
+
+
+class KkView(BaseModel):
+    no_kk: Optional[str] = None
+    kepala_keluarga: Optional[str] = None
+    anggota: list[AnggotaKeluarga] = Field(default_factory=list)
+
+
+class IdentityView(BaseModel):
+    """User Information section. v1: ktp.nama is real; everything else is a
+    stub (null) until a KTP/KK extractor lands."""
+    ktp: KtpView = Field(default_factory=KtpView)
+    kk: KkView = Field(default_factory=KkView)
+
+
 class MonthlyIncomeRow(BaseModel):
     """One calendar month of income, joined from bank credits + a salary slip.
 

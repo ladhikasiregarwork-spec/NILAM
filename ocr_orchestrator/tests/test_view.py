@@ -2,7 +2,7 @@
 import unittest
 
 from ocr_orchestrator import view
-from ocr_orchestrator.models import EmploymentView
+from ocr_orchestrator.models import EmploymentView, IdentityView
 
 
 class TestProjectEmployment(unittest.TestCase):
@@ -40,3 +40,17 @@ class TestProjectEmployment(unittest.TestCase):
 
     def test_no_recognizable_fields_returns_none(self):
         self.assertIsNone(view.project_employment({"unrelated": "value"}))
+
+
+class TestProjectIdentity(unittest.TestCase):
+    def test_name_populated_rest_null(self):
+        idv = view.project_identity("MUHAMMAD ARIE")
+        self.assertEqual(idv.ktp.nama, "MUHAMMAD ARIE")
+        self.assertIsNone(idv.ktp.nik)
+        self.assertIsNone(idv.ktp.gender)
+        self.assertIsNone(idv.kk.no_kk)
+        self.assertEqual(idv.kk.anggota, [])
+
+    def test_none_name(self):
+        idv = view.project_identity(None)
+        self.assertIsNone(idv.ktp.nama)
