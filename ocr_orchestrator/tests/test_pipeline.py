@@ -179,6 +179,33 @@ class TestRunJob(unittest.IsolatedAsyncioTestCase):
                                    password=None, input_warnings=["partial loan ignored"])
         self.assertIn("partial loan ignored", job.result.audit.warnings)
 
+    async def test_match_outage_still_renders_agunan_and_decision(self):
+        from ocr_orchestrator.upstream import UpstreamUnreachableError
+        from ocr_orchestrator.models import AgunanInput, CollateralInput, LoanRequest
+        collateral = CollateralInput(luas_tanah=80.0, luas_bangunan=50.0)
+        loan = LoanRequest(loan_amount=410_000_000, tenor_months=180,
+                           annual_interest_rate=0.105)
+        agunan = AgunanInput(provinsi="Jawa Barat", harga_rumah=610_000_000.0)
+        fmv = _async({"land_value": 3.0, "building_value": 2.0,
+                      "fair_value": 610_000_000.0, "location_matched": True,
+                      "backend": "linear", "warnings": []})
+        store = JobStore(retention=10)
+        job = await store.create()
+        with mock.patch.object(pipeline.upstream, "classify_documents", _classify()), \
+             mock.patch.object(pipeline.upstream, "parse_sk", _async({"summary": {}})), \
+             mock.patch.object(pipeline.upstream, "match_documents",
+                               _async_raise(UpstreamUnreachableError("ocr_match down"))), \
+             mock.patch.object(pipeline.upstream, "predict_fair_value", fmv):
+            await pipeline.run_job(store, job.id, _FILES, bonus_accept_pct=0.0,
+                                   password=None, collateral=collateral, loan=loan,
+                                   agunan=agunan)
+        self.assertEqual(job.status, "completed")
+        self.assertEqual(job.result.agunan.npw, 610_000_000.0)        # FMV still ran
+        self.assertEqual(job.result.decision.recommendation, "refer_to_analyst")
+        self.assertEqual(job.result.matching.rekap_per_bulan, [])     # no income data
+        self.assertEqual(job.result.bank_statement.n_transaksi, 0)
+        self.assertIsNone(job.result.installment.kemampuan_bayar)     # qi is None
+
 
 if __name__ == "__main__":
     unittest.main()
