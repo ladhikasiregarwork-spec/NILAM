@@ -108,23 +108,27 @@ async def run(
     upstream_errors: list[str] = []
     slips: list[ParsedSlip] = []
     credits: list[GajiCredit] = []
+    slip_extraction: dict = {}
+    mutasi_extraction: dict = {}
 
     # Step 1 — fan out upstream calls concurrently.
     slip_task = asyncio.create_task(parse_slips(slip_pdfs, password=slip_password))
     mut_task = asyncio.create_task(extract_mutations(mutation_pdfs, password=mutation_password))
 
     try:
-        slips = await slip_task
+        slips, slip_extraction = await slip_task
     except (UpstreamUnreachableError, UpstreamHttpError) as exc:
         upstream_errors.append(f"ocr_slip: {exc}")
         mut_task.cancel()
-        return _empty_response([], [], upstream_errors)
+        return _empty_response([], [], upstream_errors,
+                               slip_extraction={}, mutasi_extraction={})
 
     try:
-        credits = await mut_task
+        credits, mutasi_extraction = await mut_task
     except (UpstreamUnreachableError, UpstreamHttpError) as exc:
         upstream_errors.append(f"ocr_mutasi: {exc}")
-        return _empty_response(slips, [], upstream_errors)
+        return _empty_response(slips, [], upstream_errors,
+                               slip_extraction=slip_extraction, mutasi_extraction={})
 
     # Step 2 — tag each item with its month (YYYY-MM).
     for s in slips:
@@ -133,12 +137,8 @@ async def run(
         c.month = _credit_month(c)
 
     # Step 3 — run the deterministic matcher across all slips and credits.
-    # The matcher itself handles the X+1 / X month-shift logic and exact-amount
-    # rule — no per-month grouping needed here.
     matches, unmatched_slips, unmatched_credits = match_all(slips, credits)
 
-    # ``months_processed`` is now informational: every distinct slip month
-    # (and, for visibility, the next-month buckets we looked into).
     slip_months = {s.month for s in slips if s.month}
     next_months = set()
     for m in slip_months:
@@ -162,9 +162,11 @@ async def run(
             credit_count=len(credits),
             matched_count=len(matches),
             months_processed=months_processed,
-            matcher_errors=[],  # deterministic matcher can't fail
+            matcher_errors=[],
             upstream_errors=upstream_errors,
         ),
+        slip_extraction=slip_extraction,
+        mutasi_extraction=mutasi_extraction,
     )
 
 
@@ -172,6 +174,9 @@ def _empty_response(
     slips: list[ParsedSlip],
     credits: list[GajiCredit],
     upstream_errors: list[str],
+    *,
+    slip_extraction: dict,
+    mutasi_extraction: dict,
 ) -> MatchResponse:
     return MatchResponse(
         matches=[],
@@ -185,4 +190,6 @@ def _empty_response(
             matcher_errors=[],
             upstream_errors=upstream_errors,
         ),
+        slip_extraction=slip_extraction,
+        mutasi_extraction=mutasi_extraction,
     )
