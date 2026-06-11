@@ -82,6 +82,31 @@ class VerificationInfo(BaseModel):
     matched_pairs: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class MatchedSlipView(BaseModel):
+    """The only slip field downstream code reads off a match pair."""
+    source_file: Optional[str] = None
+
+
+class MatchedCreditView(BaseModel):
+    """The only credit fields downstream code reads off a match pair."""
+    month: Optional[str] = None
+    tanggal: Optional[str] = None
+    amount: Optional[float] = None
+
+
+class MatchView(BaseModel):
+    """Local, ocr_match-free view of one matched slip<->credit pair.
+
+    Replaces ``ocr_match.models.MatchPair`` for the orchestrator's purposes:
+    ``monthly.build_monthly_breakdown`` reads ``.slip.source_file`` and
+    ``.credit.month``; ``pipeline._match_pair_view`` also reads ``.credit.tanggal``,
+    ``.credit.amount`` and ``.match_pattern``.
+    """
+    slip: MatchedSlipView = Field(default_factory=MatchedSlipView)
+    credit: MatchedCreditView = Field(default_factory=MatchedCreditView)
+    match_pattern: Optional[str] = None
+
+
 class CollateralInput(BaseModel):
     """Collateral description for the FMV call (echoed back in the result)."""
     luas_tanah: float
