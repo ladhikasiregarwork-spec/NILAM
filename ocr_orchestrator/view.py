@@ -11,7 +11,8 @@ from collections import defaultdict
 from typing import Any, Optional
 
 from .models import (
-    AgunanInput, AgunanView, BankStatementView, CollateralInput, CreditView,
+    AgunanInput, AgunanView, ApplicationResult, ApplicationView,
+    BankStatementView, CollateralInput, CreditView,
     DecisionResult, EmploymentView, FmvResult, IdentityView, IncomeBreakdown,
     InstallmentView, KlasifikasiPemasukan, KtpView, MatchingView, RekapRow,
     SlipView,
@@ -232,4 +233,34 @@ def project_bank_statement(credits: list[dict[str, Any]]) -> BankStatementView:
     return BankStatementView(
         klasifikasi=kl, total_kredit=total_kredit, total_debet=0.0,
         n_transaksi=len(credits), credits=views,
+    )
+
+
+def build_application_view(
+    result: ApplicationResult,
+    *,
+    agunan_input: Optional[AgunanInput],
+    sk_response: Any,
+    slip_docs: list[dict[str, Any]],
+    credits: list[dict[str, Any]],
+    matches: list,
+) -> ApplicationView:
+    """Project the domain ApplicationResult (+ echoed inputs + raw payloads) into
+    the UI-shaped ApplicationView. Pure and total."""
+    return ApplicationView(
+        documents=result.documents,
+        identity=project_identity(result.applicant.name),
+        employment=project_employment(sk_response),
+        agunan=project_agunan(result.collateral, agunan_input, result.fmv),
+        installment=project_installment(result.income, result.decision),
+        matching=MatchingView(
+            transaksi_pemasukan=project_transaksi_pemasukan(credits),
+            rekap_per_bulan=project_rekap(credits, slip_docs, matches),
+            salary_slip=project_salary_slips(slip_docs),
+        ),
+        bank_statement=project_bank_statement(credits),
+        income=result.income,
+        verification=result.verification,
+        decision=result.decision,
+        audit=result.audit,
     )

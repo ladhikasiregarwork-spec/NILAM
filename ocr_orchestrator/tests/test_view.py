@@ -9,6 +9,10 @@ from ocr_orchestrator.models import (  # extend the model imports
 )
 from ocr_orchestrator.models import CreditView, MatchingView, RekapRow, SlipView
 from ocr_orchestrator.models import BankStatementView
+from ocr_orchestrator.models import (
+    ApplicantInfo, ApplicationResult, ApplicationView, OrchestratorAudit,
+    VerificationInfo,
+)
 
 
 class TestProjectEmployment(unittest.TestCase):
@@ -208,3 +212,53 @@ class TestProjectBankStatement(unittest.TestCase):
         bs = view.project_bank_statement([])
         self.assertEqual(bs.n_transaksi, 0)
         self.assertEqual(bs.total_kredit, 0.0)
+
+
+class TestBuildApplicationView(unittest.TestCase):
+    def _result(self, **kw):
+        base = dict(
+            documents=[], applicant=ApplicantInfo(name="ARIE", name_source="slip"),
+            income=_income(), verification=VerificationInfo(matched_count=1),
+            collateral=CollateralInput(luas_tanah=96.0, luas_bangunan=45.0,
+                                       kode_pos="16969", kelurahan="Bojong Kulur"),
+            loan=None,
+            fmv=FmvResult(land_value=3.0, building_value=2.0, fair_value=610_000_000.0,
+                          location_matched=True, backend="linear"),
+            decision=DecisionResult(recommendation="eligible",
+                                    monthly_installment=4_532_136.0),
+            audit=OrchestratorAudit(),
+        )
+        base.update(kw)
+        return ApplicationResult(**base)
+
+    def test_assembles_all_sections(self):
+        av = view.build_application_view(
+            self._result(),
+            agunan_input=AgunanInput(provinsi="Jawa Barat", harga_rumah=610_000_000.0),
+            sk_response={"institution_name": "PT. BRI", "position": "Supervisor"},
+            slip_docs=[_slip("s.pdf", total_paid=14_598_876.0, deduction=47_662_544.0,
+                             thr=33_042_624.0, period="2026-03")],
+            credits=[_credit("Gaji", 14_598_876.0, "2026-03-25")],
+            matches=[_matchview("s.pdf", "2026-03")],
+        )
+        self.assertIsInstance(av, ApplicationView)
+        self.assertEqual(av.identity.ktp.nama, "ARIE")
+        self.assertEqual(av.employment.perusahaan, "PT. BRI")
+        self.assertEqual(av.agunan.npw, 610_000_000.0)
+        self.assertEqual(av.agunan.harga_rumah, 610_000_000.0)
+        self.assertEqual(av.installment.verdict, "eligible")
+        self.assertEqual(len(av.matching.rekap_per_bulan), 1)
+        self.assertEqual(av.bank_statement.n_transaksi, 1)
+        self.assertEqual(av.decision.recommendation, "eligible")
+        self.assertEqual(av.verification.matched_count, 1)
+
+    def test_total_on_empty_inputs(self):
+        empty = ApplicationResult(
+            documents=[], applicant=ApplicantInfo(), income=None,
+            verification=VerificationInfo(), audit=OrchestratorAudit())
+        av = view.build_application_view(empty, agunan_input=None, sk_response=None,
+                                         slip_docs=[], credits=[], matches=[])
+        self.assertIsNone(av.employment)
+        self.assertIsNone(av.installment)
+        self.assertIsNone(av.agunan.npw)
+        self.assertEqual(av.matching.rekap_per_bulan, [])

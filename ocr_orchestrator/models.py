@@ -297,6 +297,21 @@ class ApplicationResult(BaseModel):
     audit: OrchestratorAudit
 
 
+class ApplicationView(BaseModel):
+    """UI-shaped read-model for the assessment dashboard (the job result)."""
+    documents: list[DocumentResult] = Field(default_factory=list)
+    identity: IdentityView = Field(default_factory=IdentityView)
+    employment: Optional[EmploymentView] = None
+    agunan: AgunanView = Field(default_factory=AgunanView)
+    installment: Optional[InstallmentView] = None
+    matching: MatchingView = Field(default_factory=MatchingView)
+    bank_statement: BankStatementView = Field(default_factory=BankStatementView)
+    income: Optional[IncomeBreakdown] = None
+    verification: VerificationInfo = Field(default_factory=VerificationInfo)
+    decision: Optional[DecisionResult] = None
+    audit: OrchestratorAudit = Field(default_factory=OrchestratorAudit)
+
+
 class JobStage(BaseModel):
     name: str
     status: StageState = "pending"
