@@ -142,6 +142,42 @@ class MatchView(BaseModel):
     match_pattern: Optional[str] = None
 
 
+class CreditView(BaseModel):
+    tanggal: Optional[str] = None
+    amount: Optional[float] = None
+    category: Optional[str] = None
+    keterangan: Optional[str] = None
+    month: Optional[str] = None
+
+
+class SlipView(BaseModel):
+    tgl_pembayaran: Optional[str] = None
+    total_upah: Optional[float] = None
+    potongan: Optional[float] = None
+    thp: Optional[float] = None
+    thr: Optional[float] = None
+    bonus: Optional[float] = None
+
+
+class RekapRow(BaseModel):
+    bulan: str
+    gaji_slip: Optional[float] = None
+    gaji_mutasi: Optional[float] = None
+    thr_slip: Optional[float] = None
+    thr_mutasi: Optional[float] = None
+    bonus_slip: Optional[float] = None
+    bonus_mutasi: Optional[float] = None
+    income_slip: Optional[float] = None
+    potongan: Optional[float] = None
+    status: str = "non-edited"
+
+
+class MatchingView(BaseModel):
+    transaksi_pemasukan: list[CreditView] = Field(default_factory=list)
+    rekap_per_bulan: list[RekapRow] = Field(default_factory=list)
+    salary_slip: list[SlipView] = Field(default_factory=list)
+
+
 class CollateralInput(BaseModel):
     """Collateral description for the FMV call (echoed back in the result)."""
     luas_tanah: float

@@ -1,11 +1,13 @@
 # ocr_orchestrator/tests/test_view.py
 import unittest
+from types import SimpleNamespace
 
 from ocr_orchestrator import view
 from ocr_orchestrator.models import AgunanInput, AgunanView, CollateralInput, FmvResult, EmploymentView, IdentityView
 from ocr_orchestrator.models import (  # extend the model imports
     DecisionResult, InstallmentView, IncomeBreakdown,
 )
+from ocr_orchestrator.models import CreditView, MatchingView, RekapRow, SlipView
 
 
 class TestProjectEmployment(unittest.TestCase):
@@ -116,3 +118,63 @@ class TestProjectInstallment(unittest.TestCase):
         self.assertEqual(out.slik_deduction, 0.0)
         self.assertIsNone(out.kemampuan_bayar)
         self.assertIsNone(out.verdict)
+
+
+def _credit(category, amount, tanggal):
+    return {"source_file": "mut.pdf", "tanggal": tanggal, "amount": amount,
+            "category": category, "keterangan": category.upper()}
+
+
+def _slip(source_file, total_paid, deduction=0.0, incentive=0.0, thr=None, period=None):
+    return {"source_file": source_file, "total_paid": total_paid,
+            "deduction": deduction, "incentive": incentive, "thr": thr,
+            "period": period}
+
+
+def _matchview(slip_source_file, credit_month):
+    return SimpleNamespace(slip=SimpleNamespace(source_file=slip_source_file),
+                           credit=SimpleNamespace(month=credit_month))
+
+
+class TestProjectMatching(unittest.TestCase):
+    def test_transaksi_pemasukan_keeps_income_categories(self):
+        credits = [_credit("Gaji", 100, "2026-03-25"),
+                   _credit("Lainnya", 9, "2026-03-02")]
+        out = view.project_transaksi_pemasukan(credits)
+        self.assertEqual([c.category for c in out], ["Gaji"])
+        self.assertEqual(out[0].month, "2026-03")
+
+    def test_salary_slip_table(self):
+        slips = [_slip("s.pdf", total_paid=14_598_876.0, deduction=47_662_544.0,
+                       thr=33_042_624.0, period="2026-03")]
+        out = view.project_salary_slips(slips)
+        s = out[0]
+        self.assertEqual(s.thp, 14_598_876.0)
+        self.assertEqual(s.potongan, 47_662_544.0)
+        self.assertEqual(s.total_upah, 62_261_420.0)   # thp + potongan
+        self.assertEqual(s.thr, 33_042_624.0)
+
+    def test_rekap_slip_plus_mutasi_split(self):
+        credits = [_credit("Gaji", 14_598_876.0, "2026-03-25"),
+                   _credit("THR", 33_042_624.0, "2026-03-05"),
+                   _credit("Bonus", 54_933_362.0, "2026-03-17")]
+        slips = [_slip("s.pdf", total_paid=14_598_876.0, deduction=47_662_544.0,
+                       incentive=0.0, thr=33_042_624.0, period="2026-03")]
+        matches = [_matchview("s.pdf", "2026-03")]
+        rows = view.project_rekap(credits, slips, matches)
+        self.assertEqual(len(rows), 1)
+        r = rows[0]
+        self.assertEqual(r.bulan, "2026-03")
+        self.assertEqual(r.gaji_mutasi, 14_598_876.0)
+        self.assertEqual(r.thr_mutasi, 33_042_624.0)
+        self.assertEqual(r.bonus_mutasi, 54_933_362.0)
+        self.assertEqual(r.gaji_slip, 14_598_876.0)            # THP
+        self.assertEqual(r.thr_slip, 33_042_624.0)
+        self.assertEqual(r.income_slip, 62_261_420.0)          # THP + deduction
+        self.assertEqual(r.potongan, 14_619_920.0)             # income - gaji - thr
+        self.assertEqual(r.status, "non-edited")
+
+    def test_rekap_unmatched_slip_still_creates_row(self):
+        slips = [_slip("s.pdf", total_paid=1_000.0, deduction=200.0, period="2026-05")]
+        rows = view.project_rekap([], slips, [])
+        self.assertEqual([r.bulan for r in rows], ["2026-05"])

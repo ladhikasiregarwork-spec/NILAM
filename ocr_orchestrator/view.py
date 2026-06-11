@@ -7,12 +7,15 @@ See docs/superpowers/specs/2026-06-12-orchestrator-application-view-design.md.
 """
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import Any, Optional
 
 from .models import (
-    AgunanInput, AgunanView, CollateralInput, DecisionResult, EmploymentView,
-    FmvResult, IdentityView, IncomeBreakdown, InstallmentView, KtpView,
+    AgunanInput, AgunanView, CollateralInput, CreditView, DecisionResult,
+    EmploymentView, FmvResult, IdentityView, IncomeBreakdown, InstallmentView,
+    KtpView, MatchingView, RekapRow, SlipView,
 )
+from .slip_dates import credit_month, slip_month
 
 
 def _search(node: Any, keys: tuple[str, ...]) -> Optional[str]:
@@ -109,3 +112,100 @@ def project_employment(sk_response: Any) -> Optional[EmploymentView]:
         perusahaan=perusahaan, jabatan=jabatan, status=status,
         masa_kerja=masa_kerja, start_date=start_date,
     )
+
+
+_INCOME_CATEGORIES = ("Gaji", "THR", "Bonus", "Insentif")
+
+
+def project_credit(c: dict[str, Any]) -> CreditView:
+    return CreditView(
+        tanggal=c.get("tanggal"), amount=_f(c.get("amount")),
+        category=c.get("category"), keterangan=c.get("keterangan"),
+        month=credit_month(c.get("tanggal")),
+    )
+
+
+def project_transaksi_pemasukan(credits: list[dict[str, Any]]) -> list[CreditView]:
+    return [project_credit(c) for c in credits
+            if c.get("category") in _INCOME_CATEGORIES]
+
+
+def project_salary_slips(slip_docs: list[dict[str, Any]]) -> list[SlipView]:
+    rows: list[SlipView] = []
+    for d in slip_docs:
+        thp = _f(d.get("total_paid")) or 0.0
+        potongan = _f(d.get("deduction")) or 0.0
+        rows.append(SlipView(
+            tgl_pembayaran=d.get("period") or slip_month(d),
+            total_upah=thp + potongan,
+            potongan=potongan,
+            thp=thp,
+            thr=_f(d.get("thr")),
+            bonus=_f(d.get("incentive")),
+        ))
+    return rows
+
+
+def project_rekap(
+    credits: list[dict[str, Any]],
+    slip_docs: list[dict[str, Any]],
+    matches: list,
+) -> list[RekapRow]:
+    """Per-month slip-vs-mutasi split (spec §6)."""
+    mut: dict[str, dict[str, float]] = defaultdict(
+        lambda: {"gaji": 0.0, "thr": 0.0, "bonus": 0.0})
+    for c in credits:
+        cat = c.get("category")
+        if cat not in _INCOME_CATEGORIES:
+            continue
+        month = credit_month(c.get("tanggal"))
+        if not month:
+            continue
+        amount = _f(c.get("amount")) or 0.0
+        if cat == "Gaji":
+            mut[month]["gaji"] += amount
+        elif cat == "THR":
+            mut[month]["thr"] += amount
+        else:                                  # Bonus or Insentif
+            mut[month]["bonus"] += amount
+
+    matched_home: dict[str, str] = {}
+    for pair in matches:
+        sf = pair.slip.source_file
+        cm = pair.credit.month
+        if sf and cm:
+            matched_home[sf] = cm
+
+    slip: dict[str, dict[str, float]] = defaultdict(
+        lambda: {"gaji": 0.0, "thr": 0.0, "bonus": 0.0, "income": 0.0})
+    for d in slip_docs:
+        sf = d.get("source_file")
+        home = matched_home.get(sf) or slip_month(d)
+        if not home:
+            continue
+        thp = _f(d.get("total_paid")) or 0.0
+        potongan = _f(d.get("deduction")) or 0.0
+        s = slip[home]
+        s["gaji"] += thp
+        s["thr"] += _f(d.get("thr")) or 0.0
+        s["bonus"] += _f(d.get("incentive")) or 0.0
+        s["income"] += thp + potongan
+
+    rows: list[RekapRow] = []
+    for month in sorted(set(mut) | set(slip)):
+        m = mut.get(month)
+        s = slip.get(month)
+        gaji_slip = s["gaji"] if s else None
+        thr_slip = s["thr"] if s else None
+        income_slip = s["income"] if s else None
+        potongan = None
+        if income_slip is not None:
+            potongan = income_slip - (gaji_slip or 0.0) - (thr_slip or 0.0)
+        rows.append(RekapRow(
+            bulan=month,
+            gaji_slip=gaji_slip, gaji_mutasi=m["gaji"] if m else None,
+            thr_slip=thr_slip, thr_mutasi=m["thr"] if m else None,
+            bonus_slip=s["bonus"] if s else None, bonus_mutasi=m["bonus"] if m else None,
+            income_slip=income_slip, potongan=potongan,
+        ))
+    return rows
