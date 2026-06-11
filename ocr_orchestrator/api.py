@@ -276,18 +276,24 @@ classifies each file, extracts what it can, and returns a monthly income figure.
    <label>Bonus accept %: <input type="number" id="pct" min="0" max="100" step="1" value="0" style="width:80px"></label>
    <label>PDF password: <input type="password" id="pw" placeholder="optional"></label>
  </div>
- <fieldset class="grp"><legend>Collateral <span class="opt">— optional; needs both luas_tanah + luas_bangunan to price FMV</span></legend>
+ <fieldset class="grp"><legend>Agunan <span class="opt">— optional; needs luas_tanah + luas_bangunan to price FMV (NPW)</span></legend>
   <div class="row">
-   <label>Luas tanah m²: <input type="number" id="lt" min="0" step="0.01" placeholder="80" style="width:100px"></label>
-   <label>Luas bangunan m²: <input type="number" id="lb" min="0" step="0.01" placeholder="50" style="width:100px"></label>
-   <label>Kode pos: <input type="text" id="kp" placeholder="40123" style="width:100px"></label>
-   <label>Kelurahan: <input type="text" id="kl" placeholder="antapani kidul" style="width:160px"></label>
+   <label>Luas tanah m²: <input type="number" id="lt" min="0" step="0.01" placeholder="96" style="width:100px"></label>
+   <label>Luas bangunan m²: <input type="number" id="lb" min="0" step="0.01" placeholder="45" style="width:100px"></label>
+   <label>Kode pos: <input type="text" id="kp" placeholder="16969" style="width:100px"></label>
+   <label>Kelurahan: <input type="text" id="kl" placeholder="Bojong Kulur" style="width:160px"></label>
    <label>Appraisal month: <input type="number" id="am" min="200001" max="209912" placeholder="202606" style="width:110px"></label>
   </div>
- </fieldset>
- <fieldset class="grp"><legend>Loan <span class="opt">— optional; needs all three for the approve/refer decision</span></legend>
   <div class="row">
-   <label>Loan amount: <input type="number" id="la" min="0" step="1000000" placeholder="500000000" style="width:140px"></label>
+   <label>Provinsi: <input type="text" id="pv" placeholder="Jawa Barat" style="width:140px"></label>
+   <label>Kota/Kab: <input type="text" id="kk" placeholder="Bogor" style="width:120px"></label>
+   <label>Kecamatan: <input type="text" id="kc" placeholder="Bojong Kulur" style="width:140px"></label>
+  </div>
+ </fieldset>
+ <fieldset class="grp"><legend>Harga &amp; Pinjaman <span class="opt">— optional; needs harga_rumah + dp + tenor + interest (loan = harga − dp)</span></legend>
+  <div class="row">
+   <label>Harga rumah: <input type="number" id="hr" min="0" step="1000000" placeholder="610000000" style="width:140px"></label>
+   <label>DP: <input type="number" id="dp" min="0" step="1000000" placeholder="200000000" style="width:140px"></label>
    <label>Tenor months: <input type="number" id="tn" min="1" step="1" placeholder="180" style="width:100px"></label>
    <label>Annual interest: <input type="number" id="ir" min="0" step="0.001" placeholder="0.105" style="width:100px"></label>
   </div>
@@ -320,7 +326,8 @@ f.addEventListener('submit',async e=>{e.preventDefault();
  const pw=document.getElementById('pw').value;if(pw)fd.append('password',pw);
  const add=(id,key)=>{const v=document.getElementById(id).value.trim();if(v!=='')fd.append(key,v);};
  add('lt','luas_tanah');add('lb','luas_bangunan');add('kp','kode_pos');add('kl','kelurahan');add('am','appraisal_month');
- add('la','loan_amount');add('tn','tenor_months');add('ir','annual_interest_rate');
+ add('pv','provinsi');add('kk','kota_kab');add('kc','kecamatan');
+ add('hr','harga_rumah');add('dp','dp');add('tn','tenor_months');add('ir','annual_interest_rate');
  go.disabled=true;st.textContent='Submitting…';stages.innerHTML='';
  try{
    const r=await fetch('/api/v1/applications',{method:'POST',body:fd});
