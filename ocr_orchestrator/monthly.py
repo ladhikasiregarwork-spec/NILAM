@@ -6,17 +6,16 @@ salary-credit months and slip-period months). Bank-first: bank credits are the
 source of truth for the income amounts; the matched slip supplies
 ``deduction``/``total_paid``. No I/O — mirrors ``income.py``/``verify.py``.
 
-Reuses ``_slip_month`` from ``ocr_match.pipeline`` (the non-trivial month
-derivation: slip ``period`` then filename parsing). Credit months are the same
-``tanggal[:7]`` slice ``income.py`` uses.
+Reuses ``slip_dates.slip_month`` (the non-trivial month derivation: slip ``period``
+then filename parsing). Credit months are the same ``tanggal[:7]`` slice
+``income.py`` uses.
 """
 from __future__ import annotations
 
 from collections import defaultdict
 from typing import Any, Optional
 
-from ocr_match.models import ParsedSlip
-from ocr_match.pipeline import _slip_month
+from .slip_dates import slip_month as _slip_month
 
 from .models import MonthlyIncomeRow
 
@@ -54,7 +53,7 @@ def build_monthly_breakdown(
         credits: every mutasi credit dict (all categories) with ``category``,
             ``amount``, ``tanggal`` (ISO ``YYYY-MM-DD``).
         slip_docs: ocr_slip ``documents[]`` dicts.
-        matches: ``ocr_match.models.MatchPair`` list from the verify stage. Only
+        matches: ``MatchPair``-like list from the verify stage. Only
             ``pair.slip.source_file`` and ``pair.credit.month`` are read.
 
     Returns:
@@ -97,7 +96,7 @@ def build_monthly_breakdown(
             home = matched_home[source_file]
             is_matched = True
         else:
-            home = _slip_month(ParsedSlip(**d))
+            home = _slip_month(d)
             is_matched = False
         if not home:
             continue                       # un-placeable slip (no month) is dropped
