@@ -178,3 +178,11 @@ class TestProjectMatching(unittest.TestCase):
         slips = [_slip("s.pdf", total_paid=1_000.0, deduction=200.0, period="2026-05")]
         rows = view.project_rekap([], slips, [])
         self.assertEqual([r.bulan for r in rows], ["2026-05"])
+        self.assertIsNone(rows[0].gaji_mutasi)
+        self.assertIsNone(rows[0].thr_mutasi)
+
+    def test_rekap_insentif_folds_into_bonus_mutasi(self):
+        credits = [_credit("Bonus", 1_000.0, "2026-03-17"),
+                   _credit("Insentif", 500.0, "2026-03-10")]
+        rows = view.project_rekap(credits, [], [])
+        self.assertEqual(rows[0].bonus_mutasi, 1_500.0)

@@ -133,11 +133,11 @@ def project_transaksi_pemasukan(credits: list[dict[str, Any]]) -> list[CreditVie
 def project_salary_slips(slip_docs: list[dict[str, Any]]) -> list[SlipView]:
     rows: list[SlipView] = []
     for d in slip_docs:
-        thp = _f(d.get("total_paid")) or 0.0
-        potongan = _f(d.get("deduction")) or 0.0
+        thp = _f(d.get("total_paid"))
+        potongan = _f(d.get("deduction"))
         rows.append(SlipView(
             tgl_pembayaran=d.get("period") or slip_month(d),
-            total_upah=thp + potongan,
+            total_upah=(thp or 0.0) + (potongan or 0.0),
             potongan=potongan,
             thp=thp,
             thr=_f(d.get("thr")),
@@ -200,6 +200,7 @@ def project_rekap(
         income_slip = s["income"] if s else None
         potongan = None
         if income_slip is not None:
+            # potongan = deductions excluding THR (income_slip - gaji_slip - thr_slip)
             potongan = income_slip - (gaji_slip or 0.0) - (thr_slip or 0.0)
         rows.append(RekapRow(
             bulan=month,
