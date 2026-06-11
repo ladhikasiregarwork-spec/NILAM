@@ -17,10 +17,10 @@ class Settings(BaseSettings):
     """Typed view of environment variables."""
 
     # Upstream OCR services (compose overrides these with service-DNS URLs).
-    ocr_classifier_url: str = "http://127.0.0.1:8000"
-    ocr_sk_url: str = "http://127.0.0.1:8100"
-    ocr_slip_url: str = "http://127.0.0.1:8200"
-    ocr_mutasi_url: str = "http://127.0.0.1:8300"
+    ocr_classifier_url: str = "http://127.0.0.1:5001"
+    ocr_sk_url: str = "http://127.0.0.1:5002"
+    ocr_slip_url: str = "http://127.0.0.1:5003"
+    ocr_mutasi_url: str = "http://127.0.0.1:5004"
 
     # Service bind.
     app_host: str = "0.0.0.0"
