@@ -35,6 +35,15 @@ class ApplicantInfo(BaseModel):
     nik: Optional[str] = None          # reserved — KTP service (follow-on)
 
 
+class EmploymentView(BaseModel):
+    """Company Employment Certificate section, projected from the ocr_sk payload."""
+    perusahaan: Optional[str] = None
+    jabatan: Optional[str] = None
+    status: Optional[str] = None
+    masa_kerja: Optional[str] = None
+    start_date: Optional[str] = None
+
+
 class MonthlyIncomeRow(BaseModel):
     """One calendar month of income, joined from bank credits + a salary slip.
 
