@@ -330,5 +330,5 @@ class JobStatusResponse(BaseModel):
     job_id: str
     status: JobState
     stages: list[JobStage]
-    result: Optional[ApplicationResult] = None
+    result: Optional[ApplicationView] = None
     error: Optional[str] = None

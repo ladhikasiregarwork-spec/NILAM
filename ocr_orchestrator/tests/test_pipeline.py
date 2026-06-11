@@ -67,8 +67,7 @@ class TestRunJob(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(job.status, "completed")
         self.assertEqual(job.result.income.basis, "bank_verified")
         self.assertEqual(job.result.income.monthly_qualifying_income, 9_500_000)
-        self.assertEqual(job.result.applicant.name, "BUDI")
-        self.assertEqual(job.result.applicant.name_source, "slip")
+        self.assertEqual(job.result.identity.ktp.nama, "BUDI")
         self.assertEqual(job.result.verification.verified_month_count, 1)
 
         slip_doc = next(d for d in job.result.documents if d.document_type == "slip")
@@ -80,6 +79,11 @@ class TestRunJob(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(row.month, "2025-03")
         self.assertEqual(row.source, "bank_verified")
         self.assertEqual(row.total_paid, 9_500_000)
+
+        from ocr_orchestrator.models import ApplicationView
+        self.assertIsInstance(job.result, ApplicationView)
+        self.assertEqual(job.result.installment.gaji_bulanan, 9_500_000)
+        self.assertEqual(len(job.result.matching.salary_slip), 1)
 
     async def test_classifier_down_fails_job(self):
         from ocr_orchestrator.upstream import UpstreamUnreachableError
@@ -144,7 +148,7 @@ class TestRunJob(unittest.IsolatedAsyncioTestCase):
             await pipeline.run_job(store, job.id, _FILES, bonus_accept_pct=0.0,
                                    password=None, collateral=collateral, loan=loan)
         self.assertEqual(job.status, "completed")
-        self.assertEqual(job.result.fmv.fair_value, 1_000_000_000)
+        self.assertEqual(job.result.agunan.npw, 1_000_000_000)
         self.assertEqual(job.result.decision.recommendation, "eligible")
         self.assertEqual(next(s for s in job.stages if s.name == "fmv").status, "completed")
 
@@ -158,7 +162,7 @@ class TestRunJob(unittest.IsolatedAsyncioTestCase):
                                                      period="2025-03"))):
             await pipeline.run_job(store, job.id, _FILES, bonus_accept_pct=0.0,
                                    password=None)
-        self.assertIsNone(job.result.fmv)
+        self.assertIsNone(job.result.agunan.npw)
         self.assertIsNone(job.result.decision)
         self.assertEqual(next(s for s in job.stages if s.name == "fmv").status, "skipped")
         self.assertEqual(next(s for s in job.stages if s.name == "decide").status, "skipped")

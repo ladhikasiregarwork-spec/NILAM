@@ -13,6 +13,7 @@ import time
 from typing import Any
 
 from . import upstream
+from . import view
 from .config import get_settings
 from .decision import decide
 from .identity import resolve_applicant_name
@@ -257,4 +258,12 @@ async def _execute(
         decision=decision_result,
         audit=audit,
     )
-    await store.set_result(job_id, result)
+    view_result = view.build_application_view(
+        result,
+        agunan_input=agunan,
+        sk_response=sk_response or None,
+        slip_docs=slip_docs,
+        credits=credits,
+        matches=matches,
+    )
+    await store.set_result(job_id, view_result)
