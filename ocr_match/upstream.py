@@ -39,12 +39,18 @@ class UpstreamHttpError(RuntimeError):
 async def parse_slips(
     pdfs: list[tuple[str, bytes]],
     password: str | None = None,
-) -> list[ParsedSlip]:
-    """POST a batch of slip PDFs to ocr_slip:/parse and return ParsedSlip objects.
+) -> tuple[list[ParsedSlip], dict]:
+    """POST a batch of slip PDFs to ocr_slip:/parse and return ParsedSlip objects
+    together with the full raw JSON payload.
 
     Args:
         pdfs: list of (filename, bytes) tuples.
         password: optional PDF password applied to every slip in the batch.
+
+    Returns:
+        A 2-tuple ``(slips, raw)`` where *slips* is a list of typed
+        :class:`ParsedSlip` objects and *raw* is the unmodified JSON dict
+        returned by ocr_slip (passed through for downstream use).
 
     Raises:
         UpstreamUnreachableError: ocr_slip refused the connection.
@@ -73,7 +79,7 @@ async def parse_slips(
         raise UpstreamHttpError("ocr_slip", r.status_code, r.text)
     payload = r.json()
     docs = payload.get("documents", [])
-    return [ParsedSlip(**d) for d in docs]
+    return [ParsedSlip(**d) for d in docs], payload
 
 
 # --------------------------- ocr_mutasi → GajiCredit[] ---------------------
@@ -81,14 +87,24 @@ async def parse_slips(
 async def extract_mutations(
     pdfs: list[tuple[str, bytes]],
     password: str | None = None,
-) -> list[GajiCredit]:
+) -> tuple[list[GajiCredit], dict]:
     """POST a batch of bank-statement PDFs to ocr_mutasi:/extract-batch and
-    return only the credits that were classified as Gaji.
+    return only the credits classified as Gaji together with the full raw JSON
+    payload.
+
+    The typed list is Gaji-filtered (the matcher only needs Gaji credits).
+    The raw payload keeps ALL credit categories and is passed through
+    unchanged for downstream use (e.g. populating ``mutasi_extraction``).
 
     Args:
         pdfs: list of (filename, bytes) tuples.
         password: optional PDF password applied to every bank statement in
             the batch.
+
+    Returns:
+        A 2-tuple ``(gaji_credits, raw)`` where *gaji_credits* contains only
+        the Gaji-classified :class:`GajiCredit` objects and *raw* is the
+        unmodified JSON dict returned by ocr_mutasi.
 
     Raises:
         UpstreamUnreachableError, UpstreamHttpError (same semantics as above).
@@ -116,4 +132,5 @@ async def extract_mutations(
         raise UpstreamHttpError("ocr_mutasi", r.status_code, r.text)
     payload = r.json()
     credits = payload.get("credits", [])
-    return [GajiCredit(**c) for c in credits if c.get("category") == "Gaji"]
+    gaji = [GajiCredit(**c) for c in credits if c.get("category") == "Gaji"]
+    return gaji, payload
