@@ -22,6 +22,7 @@ from .monthly import build_monthly_breakdown
 from .models import (
     ApplicantInfo,
     ApplicationResult,
+    AgunanInput,
     CollateralInput,
     FmvResult,
     LoanRequest,
@@ -66,6 +67,7 @@ async def run_job(
     password: str | None,
     collateral: CollateralInput | None = None,
     loan: LoanRequest | None = None,
+    agunan: AgunanInput | None = None,
     input_warnings: list[str] | None = None,
 ) -> None:
     """Run the pipeline, guaranteeing the job ends ``completed`` or ``failed``.
@@ -79,7 +81,8 @@ async def run_job(
         await _execute(
             store, job_id, files,
             bonus_accept_pct=bonus_accept_pct, password=password,
-            collateral=collateral, loan=loan, input_warnings=input_warnings,
+            collateral=collateral, loan=loan, agunan=agunan,
+            input_warnings=input_warnings,
         )
     except Exception as exc:  # backstop — pipeline stages are mostly pure
         logger.exception("run_job crashed for job %s", job_id)
@@ -95,6 +98,7 @@ async def _execute(
     password: str | None,
     collateral: CollateralInput | None = None,
     loan: LoanRequest | None = None,
+    agunan: AgunanInput | None = None,
     input_warnings: list[str] | None = None,
 ) -> None:
     """Run the whole pipeline for one job, mutating job state in ``store``."""

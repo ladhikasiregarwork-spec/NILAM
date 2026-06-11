@@ -54,12 +54,11 @@ class TestApi(unittest.TestCase):
             self.assertIn(g.json()["status"],
                           {"pending", "running", "completed", "failed"})
 
-    def test_invalid_loan_amount_is_400(self):
-        # validation fires before job creation — no upstream mock needed
+    def test_invalid_harga_rumah_is_400(self):
         r = self.client.post(
             "/api/v1/applications",
             files=[("files", ("x.pdf", b"%PDF-1.4 fake", "application/pdf"))],
-            data={"loan_amount": "-5"},
+            data={"harga_rumah": "-5"},
         )
         self.assertEqual(r.status_code, 400)
 
@@ -80,7 +79,21 @@ class TestApi(unittest.TestCase):
         )
         self.assertEqual(r.status_code, 400)
 
-    def test_accepts_collateral_and_loan_fields_returns_202(self):
+    def test_build_loan_from_price_derives_amount(self):
+        from ocr_orchestrator.api import _build_loan_from_price
+        warnings = []
+        loan = _build_loan_from_price(610_000_000.0, 200_000_000.0, 180, 0.105, warnings)
+        self.assertEqual(loan.loan_amount, 410_000_000.0)   # harga - dp
+        self.assertEqual(loan.tenor_months, 180)
+        self.assertEqual(warnings, [])
+
+    def test_build_loan_from_price_partial_warns(self):
+        from ocr_orchestrator.api import _build_loan_from_price
+        warnings = []
+        self.assertIsNone(_build_loan_from_price(610_000_000.0, None, 180, 0.105, warnings))
+        self.assertTrue(warnings)
+
+    def test_accepts_harga_dp_address_returns_202(self):
         classify = _async([
             {"filename": "x.pdf", "document_type": "unknown", "confidence": "low"},
         ])
@@ -88,12 +101,11 @@ class TestApi(unittest.TestCase):
             r = self.client.post(
                 "/api/v1/applications",
                 files=[("files", ("x.pdf", b"%PDF-1.4 fake", "application/pdf"))],
-                data={
-                    "luas_tanah": "80", "luas_bangunan": "50",
-                    "kode_pos": "40123", "kelurahan": "antapani kidul",
-                    "loan_amount": "700000000", "tenor_months": "240",
-                    "annual_interest_rate": "0.105",
-                },
+                data={"luas_tanah": "96", "luas_bangunan": "45",
+                      "kode_pos": "16969", "kelurahan": "Bojong Kulur",
+                      "provinsi": "Jawa Barat", "kota_kab": "Bogor",
+                      "harga_rumah": "610000000", "dp": "200000000",
+                      "tenor_months": "180", "annual_interest_rate": "0.105"},
             )
             self.assertEqual(r.status_code, 202)
 

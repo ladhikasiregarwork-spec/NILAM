@@ -19,7 +19,9 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from . import __version__, upstream
 from .config import get_settings
 from .jobs import JobStore
-from .models import AcceptedResponse, CollateralInput, JobStatusResponse, LoanRequest
+from .models import (
+    AcceptedResponse, AgunanInput, CollateralInput, JobStatusResponse, LoanRequest,
+)
 from .pipeline import run_job
 
 logger = logging.getLogger("ocr_orchestrator.api")
@@ -124,16 +126,17 @@ def _build_collateral(
     return None
 
 
-def _build_loan(
-    loan_amount: float | None, tenor_months: int | None,
+def _build_loan_from_price(
+    harga_rumah: float | None, dp: float | None, tenor_months: int | None,
     annual_interest_rate: float | None, warnings: list[str],
 ) -> LoanRequest | None:
-    fields = (loan_amount, tenor_months, annual_interest_rate)
+    """loan_amount = harga_rumah - dp (D3). All four fields required for a loan."""
+    fields = (harga_rumah, dp, tenor_months, annual_interest_rate)
     if all(v is not None for v in fields):
-        return LoanRequest(loan_amount=loan_amount, tenor_months=tenor_months,
+        return LoanRequest(loan_amount=harga_rumah - dp, tenor_months=tenor_months,
                            annual_interest_rate=annual_interest_rate)
     if any(v is not None for v in fields):
-        warnings.append("Partial loan fields provided (need loan_amount, "
+        warnings.append("Partial loan fields provided (need harga_rumah, dp, "
                         "tenor_months and annual_interest_rate); decision skipped.")
     return None
 
@@ -155,7 +158,11 @@ async def create_application(
     kode_pos: Optional[str] = Form(None, description="Collateral postal code."),
     kelurahan: Optional[str] = Form(None, description="Collateral village/ward."),
     appraisal_month: Optional[int] = Form(None, description="Appraisal month YYYYMM."),
-    loan_amount: Optional[float] = Form(None, description="Requested loan principal (> 0)."),
+    provinsi: Optional[str] = Form(None, description="Agunan province."),
+    kota_kab: Optional[str] = Form(None, description="Agunan city/regency."),
+    kecamatan: Optional[str] = Form(None, description="Agunan district."),
+    harga_rumah: Optional[float] = Form(None, description="Listed house price (> 0)."),
+    dp: Optional[float] = Form(None, description="Down payment (>= 0)."),
     tenor_months: Optional[int] = Form(None, description="Loan term in months (> 0)."),
     annual_interest_rate: Optional[float] = Form(None, description="Annual rate as a decimal, e.g. 0.105 (>= 0)."),
 ) -> AcceptedResponse:
@@ -184,7 +191,8 @@ async def create_application(
 
     _validate_numeric("luas_tanah", luas_tanah, allow_zero=False)
     _validate_numeric("luas_bangunan", luas_bangunan, allow_zero=True)
-    _validate_numeric("loan_amount", loan_amount, allow_zero=False)
+    _validate_numeric("harga_rumah", harga_rumah, allow_zero=False)
+    _validate_numeric("dp", dp, allow_zero=True)
     _validate_numeric("tenor_months", tenor_months, allow_zero=False)
     _validate_numeric("annual_interest_rate", annual_interest_rate, allow_zero=True)
     _validate_appraisal_month(appraisal_month)
@@ -192,12 +200,16 @@ async def create_application(
     input_warnings: list[str] = []
     collateral = _build_collateral(luas_tanah, luas_bangunan, kode_pos, kelurahan,
                                    appraisal_month, input_warnings)
-    loan = _build_loan(loan_amount, tenor_months, annual_interest_rate, input_warnings)
+    loan = _build_loan_from_price(harga_rumah, dp, tenor_months,
+                                  annual_interest_rate, input_warnings)
+    agunan = AgunanInput(provinsi=provinsi, kota_kab=kota_kab,
+                         kecamatan=kecamatan, harga_rumah=harga_rumah)
 
     job = await store.create()
     task = asyncio.create_task(
         run_job(store, job.id, payload, bonus_accept_pct=pct, password=password,
-                collateral=collateral, loan=loan, input_warnings=input_warnings)
+                collateral=collateral, loan=loan, agunan=agunan,
+                input_warnings=input_warnings)
     )
     task.add_done_callback(_log_task_result)
     await store.attach_task(job.id, task)
