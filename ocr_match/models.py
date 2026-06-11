@@ -7,7 +7,7 @@ schema changes here.
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -90,3 +90,10 @@ class MatchResponse(BaseModel):
     unmatched_slips: list[ParsedSlip]
     unmatched_credits: list[GajiCredit]
     audit: MatchAudit
+    # Verbatim upstream response bodies, passed through so a single caller (the
+    # orchestrator) can source full slip + mutasi extraction from one match call.
+    # slip_extraction == ocr_slip /parse body: {"documents": [...]}
+    # mutasi_extraction == ocr_mutasi extract-batch body:
+    #   {"files": [...], "credits": [...all categories...], "audit": {...}}
+    slip_extraction: dict[str, Any] = Field(default_factory=dict)
+    mutasi_extraction: dict[str, Any] = Field(default_factory=dict)
