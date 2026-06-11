@@ -50,6 +50,12 @@ class TestModels(unittest.TestCase):
         self.assertIsNone(r.result)
         self.assertIsNone(r.error)
 
+        from ocr_orchestrator.models import ApplicationView
+        resp = JobStatusResponse(job_id="j", status="completed",
+                                 stages=[JobStage(name="classify")],
+                                 result=ApplicationView())
+        self.assertIsInstance(resp.result, ApplicationView)
+
     def test_decision_models_assemble(self):
         from ocr_orchestrator.models import (
             CheckResult, CollateralInput, DecisionResult, FmvResult, LoanRequest,

@@ -12,7 +12,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .models import ApplicationResult, JobStage, JobState, StageState
+from .models import ApplicationView, JobStage, JobState, StageState
 
 _DEFAULT_STAGES = ("classify", "extract", "acquire", "aggregate", "fmv", "decide")
 
@@ -22,7 +22,7 @@ class Job:
     id: str
     status: JobState = "pending"
     stages: list[JobStage] = field(default_factory=list)
-    result: Optional[ApplicationResult] = None
+    result: Optional[ApplicationView] = None
     error: Optional[str] = None
     # Kept so the background task isn't garbage-collected mid-run. Never serialised.
     task: Optional[asyncio.Task] = None
@@ -69,7 +69,7 @@ class JobStore:
                     stage.error = error
                     break
 
-    async def set_result(self, job_id: str, result: ApplicationResult) -> None:
+    async def set_result(self, job_id: str, result: ApplicationView) -> None:
         async with self._lock:
             job = self._jobs.get(job_id)
             if job:
