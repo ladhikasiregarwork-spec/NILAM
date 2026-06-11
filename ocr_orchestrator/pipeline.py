@@ -1,5 +1,5 @@
-"""Async stage orchestration: classify -> extract -> verify -> aggregate ->
-fmv -> decide -> assemble. The six tracked stages (classify, extract, verify,
+"""Async stage orchestration: classify -> extract -> acquire -> aggregate ->
+fmv -> decide -> assemble. The six tracked stages (classify, extract, acquire,
 aggregate, fmv, decide) are surfaced in ``job.stages``; assemble is the final
 (untracked) completion step. Updates the job's stages as it progresses.
 
@@ -7,7 +7,6 @@ Imported as ``from . import upstream`` so tests can patch the upstream calls.
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 import time
@@ -30,7 +29,7 @@ from .models import (
     VerificationInfo,
 )
 from .routing import route_documents
-from .verify import verify_slips_credits
+from .matching import parse_match_response
 
 logger = logging.getLogger("ocr_orchestrator.pipeline")
 
@@ -120,54 +119,53 @@ async def _execute(
     buckets, doc_results, route_warnings = route_documents(classifications, files)
     audit.warnings.extend(route_warnings)
 
-    # ---- Stage 2: extract (concurrent) ------------------------------------
+    # ---- Stage 2: extract (ocr_sk only; slip+mutasi now come from ocr_match) ----
     await store.set_stage(job_id, "extract", "running")
     t0 = time.perf_counter()
-
-    async def _slips() -> list[dict[str, Any]]:
-        if not buckets.slips:
-            return []
-        return await upstream.parse_slips(buckets.slips, password=password)
-
-    async def _mutasi() -> dict[str, Any]:
-        if not buckets.mutasi:
-            return {"files": [], "credits": [], "audit": {}}
-        return await upstream.extract_mutations(buckets.mutasi, password=password)
-
-    async def _sk() -> dict[str, Any]:
-        if not buckets.sk:
-            return {}
-        return await upstream.parse_sk(buckets.sk, password=password)
-
-    slip_res, mutasi_res, sk_res = await asyncio.gather(
-        _slips(), _mutasi(), _sk(), return_exceptions=True
-    )
-
-    slip_docs: list[dict[str, Any]] = []
-    mutasi_payload: dict[str, Any] = {"files": [], "credits": [], "audit": {}}
     sk_response: dict[str, Any] = {}
-
-    if isinstance(slip_res, Exception):
-        audit.extractor_errors.append(f"ocr_slip: {slip_res}")
-    else:
-        slip_docs = slip_res
-    if isinstance(mutasi_res, Exception):
-        audit.extractor_errors.append(f"ocr_mutasi: {mutasi_res}")
-    else:
-        mutasi_payload = mutasi_res
-    if isinstance(sk_res, Exception):
-        audit.extractor_errors.append(f"ocr_sk: {sk_res}")
-    else:
-        sk_response = sk_res
-
+    if buckets.sk:
+        try:
+            sk_response = await upstream.parse_sk(buckets.sk, password=password)
+        except _UpstreamError as exc:
+            audit.extractor_errors.append(f"ocr_sk: {exc}")
     timings["extract"] = (time.perf_counter() - t0) * 1000
     await store.set_stage(job_id, "extract", "completed")
+
+    # ---- Stage 3: acquire (single ocr_match call: slips + mutasi + match) ----
+    await store.set_stage(job_id, "acquire", "running")
+    t0 = time.perf_counter()
+    slip_docs: list[dict[str, Any]] = []
+    credits: list[dict[str, Any]] = []
+    mut_files: list[dict[str, Any]] = []
+    matches: list[Any] = []
+    verified_months: set[str] = set()
+
+    if not buckets.slips or not buckets.mutasi:
+        # ocr_match requires BOTH a slip and a mutasi PDF; a one-sided bundle can
+        # produce no verified income under the single-front-door design.
+        audit.warnings.append(
+            "ocr_match needs both a slip and a bank statement; income skipped."
+        )
+        await store.set_stage(job_id, "acquire", "completed")
+    else:
+        try:
+            payload = await upstream.match_documents(
+                buckets.slips, buckets.mutasi, password=password
+            )
+            slip_docs, credits, mut_files, matches, verified_months = \
+                parse_match_response(payload)
+            await store.set_stage(job_id, "acquire", "completed")
+        except _UpstreamError as exc:  # D1: degrade to no-income, don't fail
+            logger.warning("acquire stage degraded: %s", exc)
+            audit.extractor_errors.append(f"ocr_match: {exc}")
+            audit.warnings.append("ocr_match unreachable; income could not be verified.")
+            await store.set_stage(job_id, "acquire", "completed", str(exc))
+    timings["acquire"] = (time.perf_counter() - t0) * 1000
 
     # Attach per-document extraction payloads (by filename).
     slip_by_file: dict[str, dict[str, Any]] = {}
     for _d in slip_docs:
         slip_by_file.setdefault(_slip_base(_d.get("source_file")), _d)
-    mut_files = mutasi_payload.get("files", [])
     mut_by_file = {f.get("filename"): f for f in mut_files}
     for d in doc_results:
         if d.document_type == "slip":
@@ -176,21 +174,6 @@ async def _execute(
             d.extracted = mut_by_file.get(d.filename)
         elif d.document_type == "sk":
             d.extracted = sk_response or None
-
-    credits = mutasi_payload.get("credits", [])
-    gaji_credits = [c for c in credits if c.get("category") == "Gaji"]
-
-    # ---- Stage 3: verify ---------------------------------------------------
-    await store.set_stage(job_id, "verify", "running")
-    t0 = time.perf_counter()
-    try:
-        matches, verified_months = verify_slips_credits(slip_docs, gaji_credits)
-    except Exception as exc:  # matcher is deterministic; guard defensively
-        logger.exception("verify stage failed")
-        matches, verified_months = [], set()
-        audit.warnings.append(f"verification skipped: {exc}")
-    timings["verify"] = (time.perf_counter() - t0) * 1000
-    await store.set_stage(job_id, "verify", "completed")
 
     verification = VerificationInfo(
         matched_count=len(matches),
