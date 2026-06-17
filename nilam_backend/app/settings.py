@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     match_url: str = "http://127.0.0.1:5005"
     npw_url: str = "http://127.0.0.1:8000"
 
+    # Flow thresholds / policy (types/flow.ts SURVEY_THRESHOLD; SummaryDecisionCard KPR_RATE).
+    survey_threshold: int = 500_000_000
+    kpr_rate_indicative: float = 0.105
+
 
 @lru_cache
 def get_settings() -> Settings:

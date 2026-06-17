@@ -10,8 +10,10 @@ from nilam_backend.services.identity.router import router as identity_router
 from nilam_backend.services.income.router import router as income_router
 from nilam_backend.services.matching.router import router as matching_router
 from nilam_backend.services.offering.router import router as offering_router
+from nilam_backend.services.orchestration.router import router as orchestration_router
 from nilam_backend.services.plafond.router import router as plafond_router
 from nilam_backend.services.slik.router import router as slik_router
+from nilam_backend.services.survey.router import router as survey_router
 
 app = FastAPI(title="NILAM Backend", version="0.1.0")
 
@@ -32,3 +34,5 @@ app.include_router(fraud_router)
 app.include_router(decision_router)
 app.include_router(identity_router)
 app.include_router(slik_router)
+app.include_router(orchestration_router)
+app.include_router(survey_router)
