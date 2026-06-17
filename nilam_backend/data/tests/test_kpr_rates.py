@@ -18,6 +18,7 @@ def test_schemes_present():
 def test_scheme_rate_fixedall_tiers():
     s = _scheme("fixedall")
     assert scheme_rate(s, 4) == 0.0725
+    assert scheme_rate(s, 5) == 0.0775   # lower bound of second tier
     assert scheme_rate(s, 10) == 0.0775
     assert scheme_rate(s, 11) == 0.08
     # non-tiered scheme returns its indicative rate
@@ -42,3 +43,5 @@ def test_rate_plan_berjenjang_three_windows_then_floating():
 def test_rate_plan_fixedall_single_window():
     plan = rate_plan(_scheme("fixedall"), 8)
     assert plan == [{"years": None, "rate": 0.0775}]
+    assert rate_plan(_scheme("fixedall"), 3) == [{"years": None, "rate": 0.0725}]
+    assert rate_plan(_scheme("fixedall"), 15) == [{"years": None, "rate": 0.08}]
