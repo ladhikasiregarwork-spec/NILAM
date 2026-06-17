@@ -54,3 +54,32 @@ class SlipGajiExtract(BaseModel):
     """Salary-slip extraction: one record per uploaded slip (per payment date)."""
 
     records: List[SlipRecord] = []
+
+
+class KtpExtract(BaseModel):
+    """Fields extracted from a KTP (identity card)."""
+
+    nik: Optional[str] = None
+    nama: Optional[str] = None
+    gender: Optional[str] = None
+    tempatLahir: Optional[str] = None
+    tanggalLahir: Optional[str] = None
+    alamat: Optional[str] = None
+    statusPerkawinan: Optional[str] = None
+    fileName: Optional[str] = None
+
+
+class KkMember(BaseModel):
+    nama: str
+    hubungan: str
+    nik: Optional[str] = None
+
+
+class KkExtract(BaseModel):
+    """Fields extracted from a Kartu Keluarga (family card)."""
+
+    nomorKK: Optional[str] = None
+    kepalaKeluarga: Optional[str] = None
+    alamat: Optional[str] = None
+    members: List[KkMember] = []
+    fileName: Optional[str] = None
