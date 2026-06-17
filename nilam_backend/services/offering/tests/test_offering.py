@@ -60,3 +60,13 @@ def test_offering_endpoint():
     assert body["ok"] is True
     assert body["maxTenorByAge"] == 25
     assert len(body["schemes"]) > 0
+
+
+def test_offering_usia_none_uses_cap_tenor():
+    # usia omitted -> max_tenor_by_age returns the cap (25); response is valid, no crash
+    out = build_offering(
+        harga=500_000_000, uang_muka=100_000_000, usia=None,
+        jangka_waktu=15, kemampuan=50_000_000, plafon_agunan=1_000_000_000,
+    )
+    assert out["maxTenorByAge"] == 25
+    assert len(out["schemes"]) > 0
