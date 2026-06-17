@@ -20,3 +20,5 @@ def test_js_round_matches_math_round():
     assert js_round(2.4) == 2
     assert js_round(-2.5) == -2
     assert js_round(0.5) == 1
+    assert js_round(-0.5) == 0   # JS: Math.round(-0.5) === 0
+    assert js_round(-2.4) == -2
