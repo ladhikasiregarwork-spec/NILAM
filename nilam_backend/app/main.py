@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 
 from nilam_backend.core.envelope import ok
+from nilam_backend.services.capacity.router import router as capacity_router
 
 app = FastAPI(title="NILAM Backend", version="0.1.0")
 
@@ -9,5 +10,7 @@ app = FastAPI(title="NILAM Backend", version="0.1.0")
 def health() -> dict:
     return ok(service="nilam_backend")
 
+
+app.include_router(capacity_router)
 
 # Service routers are mounted here as they are built (Tasks 3, 4, 6).
