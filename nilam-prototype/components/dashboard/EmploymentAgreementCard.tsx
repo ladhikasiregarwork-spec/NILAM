@@ -1,10 +1,18 @@
 "use client";
 
-import { FileSignature, CalendarRange } from "lucide-react";
+import { useState } from "react";
+import { FileSignature, CalendarRange, Pencil } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { formatRupiah } from "@/lib/formatRupiah";
 import type { NodeStatus } from "@/types/orchestration";
 import type { EmploymentAgreement } from "@/types/profile";
+
+type EditableField = "perusahaan" | "jabatan" | "statusKepegawaian" | "masaKerja";
+const EDITABLE: { key: EditableField; label: string }[] = [
+  { key: "perusahaan", label: "Perusahaan" },
+  { key: "jabatan", label: "Jabatan" },
+  { key: "statusKepegawaian", label: "Status" },
+  { key: "masaKerja", label: "Masa Kerja" },
+];
 
 interface EmploymentAgreementCardProps {
   /** Gates the card: data only shows once the extraction step succeeds. */
@@ -14,16 +22,8 @@ interface EmploymentAgreementCardProps {
   title?: string;
   /** True when the document was not uploaded — show a "belum diunggah" state. */
   missing?: boolean;
-}
-
-/** Label + value row. */
-function AgreementRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-start justify-between gap-1">
-      <span className="shrink-0 text-[8.5px] text-bri-muted">{label}</span>
-      <span className="text-right text-[8.5px] font-medium text-bri-ink">{value}</span>
-    </div>
-  );
+  /** Optional source badge, e.g. "Hasil OCR" when data came from a real PDF. */
+  sourceLabel?: string;
 }
 
 /**
@@ -36,7 +36,10 @@ export function EmploymentAgreementCard({
   agreement,
   title = "Perjanjian Kerja",
   missing,
+  sourceLabel,
 }: EmploymentAgreementCardProps) {
+  // Inline edits (default = OCR value, tracked until the user types).
+  const [edits, setEdits] = useState<Partial<Record<EditableField, string>>>({});
   const isSuccess = status === "success" && !missing;
 
   if (!isSuccess || !agreement) {
@@ -74,23 +77,29 @@ export function EmploymentAgreementCard({
         <span className="text-[9px] font-semibold uppercase tracking-[0.12em] text-bri-muted">
           {title}
         </span>
+        <span className="ml-auto flex items-center gap-1">
+          {sourceLabel && (
+            <span className="rounded-pill bg-bri-navy/10 px-1.5 py-px text-[7px] font-semibold text-bri-navy">
+              {sourceLabel}
+            </span>
+          )}
+          <Pencil size={8} className="text-bri-muted/60" />
+        </span>
       </div>
 
-      {/* Body — field rows + base-salary highlight, footer pinned */}
+      {/* Body — editable field rows (default from OCR), footer pinned */}
       <div className="flex flex-1 flex-col justify-between">
         <div className="flex flex-col gap-0.5">
-          <AgreementRow label="Perusahaan" value={agreement.perusahaan} />
-          <AgreementRow label="Jabatan" value={agreement.jabatan} />
-          <AgreementRow label="Status" value={agreement.statusKepegawaian} />
-          <AgreementRow label="Masa Kerja" value={agreement.masaKerja} />
-        </div>
-
-        {/* Gaji pokok highlight */}
-        <div className="mt-1 flex items-center justify-between rounded-lg border border-bri-line/70 bg-bri-bg/50 px-2 py-1">
-          <span className="text-[8.5px] text-bri-muted">Gaji Pokok</span>
-          <span className="text-[11px] font-bold text-bri-navy tabular-nums">
-            {formatRupiah(agreement.gajiPokok)}
-          </span>
+          {EDITABLE.map((f) => (
+            <div key={f.key} className="flex items-center justify-between gap-1">
+              <span className="shrink-0 text-[8.5px] text-bri-muted">{f.label}</span>
+              <input
+                value={edits[f.key] ?? String(agreement[f.key] ?? "")}
+                onChange={(e) => setEdits((p) => ({ ...p, [f.key]: e.target.value }))}
+                className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-0.5 text-right text-[8.5px] font-medium text-bri-ink hover:border-bri-line focus:border-bri-blue focus:bg-white focus:outline-none"
+              />
+            </div>
+          ))}
         </div>
 
         {/* Contract period — pinned at bottom */}

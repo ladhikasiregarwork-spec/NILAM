@@ -1,0 +1,55 @@
+==========================================================================
+ 05 - FLOW UPLOAD SATU MENU + CLASSIFIER (ALUR TERBARU)
+==========================================================================
+
+Menggantikan langkah "Upload Dokumen" di 01-flow-mobile.txt. Sekarang hanya
+ADA SATU menu upload; jenis tiap dokumen ditentukan otomatis oleh classifier
+lokal (rule-based, offline).
+
+Service yang terlibat:
+  - Classifier lokal   -> port 8020 (local_classifier/classifier_app.py)
+  - Slip Gaji OCR      -> port 8012 (slip-gaji-ocr)
+  - SK Perusahaan OCR  -> port 8011 (keterangan-kerja-ocr)
+
+Diagram alur:
+
+  [HP] RequirementScreen - SATU menu upload (multi-file, tanpa batas)
+     |  user pilih banyak file sekaligus
+     v
+  (1) classifyAndUpload(files)         (hooks/useNilamFlow.ts)
+     |  POST /api/ocr/classify  (semua file)
+     v
+  (2) proxy -> classifier lokal 8020 /classify-batch
+     |  ekstrak teks (pypdfium2 + Tesseract) + skor kata kunci
+     |  balas per file: { type: ktp|kk|slip|mutasi|sk|unknown }
+     v
+  (3) kelompokkan file per jenis, hitung jumlahnya
+     |  dispatch "classify" -> set uploads[jenis]=true + docCounts[jenis]+=n
+     v
+  (4) untuk file SLIP -> POST /api/ocr/slip-gaji (extract isi)
+      untuk file SK   -> POST /api/ocr/sk-perusahaan (extract isi)
+     |  simpan ke state.ocr (dipakai kartu dashboard)
+     v
+  (5) UI menampilkan:
+        - "Hasil Deteksi": tiap file -> jenis terdeteksi
+        - "Status Dokumen": checklist 5 dokumen (Terunggah / Belum)
+        - jumlah file untuk Slip Gaji & Mutasi
+
+Aturan khusus:
+  - KTP & KK : DUMMY. Dianggap sudah diunggah sejak awal (uploads.ktp=true,
+    uploads.kk=true di initialState). Datanya pakai mock.
+  - Slip Gaji & SK : isinya dibaca OCR -> tampil di kartu dashboard.
+  - Mutasi : dihitung jumlah filenya (ditampilkan di kartu Bank Statement).
+             (Ekstraksi isi mutasi belum aktif - butuh paket ocr_mutasi yang
+              memerlukan infra korporat.)
+  - unknown : file tidak cocok jenis manapun -> ditandai "Tidak dikenali",
+              tidak menambah dokumen.
+
+Dashboard:
+  - Kartu "Salary Slip"     -> badge "N file" (docCounts.slip_gaji)
+  - Kartu "Bank Statement"  -> badge "N file" (docCounts.mutasi)
+
+Catatan: classifier lokal ini adalah pengganti offline dari paket korporat
+"ocr_classifier" (yang butuh Azure OpenAI + server PaddleOCR korporat dan tidak
+bisa dijalankan di mesin ini).
+==========================================================================

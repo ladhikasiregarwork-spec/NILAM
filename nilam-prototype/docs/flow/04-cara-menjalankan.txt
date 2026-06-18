@@ -1,0 +1,74 @@
+==========================================================================
+ 04 - CARA MENJALANKAN (RUNBOOK)
+==========================================================================
+
+Prasyarat (sudah di-install oleh Claude di mesin ini):
+  - Python 3.12             -> C:\Users\BRI\AppData\Local\Programs\Python\Python312
+  - Tesseract OCR 5.4       -> C:\Program Files\Tesseract-OCR
+  - Virtualenv bersama      -> <repo>\.venv  (dependency kedua service)
+  - Node.js + npm           -> untuk Next.js (sudah ada)
+
+Struktur folder (di dalam repo NILAM):
+  keterangan-kerja-ocr\     service OCR SK Perusahaan (FastAPI)
+  slip-gaji-ocr\            service OCR Slip Gaji (FastAPI)
+  nilam-prototype\         aplikasi Next.js (UI)
+
+--------------------------------------------------------------------------
+1) JALANKAN SERVICE OCR (2 terminal terpisah)
+--------------------------------------------------------------------------
+  Catatan: Tesseract harus ada di PATH proses.
+
+  # Terminal A - SK Perusahaan (port 8011)
+  $env:Path = "C:\Program Files\Tesseract-OCR;" + $env:Path
+  & "<repo>\.venv\Scripts\python.exe" -m uvicorn app:app `
+      --app-dir "<repo>\keterangan-kerja-ocr\service-api" `
+      --host 127.0.0.1 --port 8011
+
+  # Terminal B - Slip Gaji (port 8012)
+  $env:Path = "C:\Program Files\Tesseract-OCR;" + $env:Path
+  & "<repo>\.venv\Scripts\python.exe" -m uvicorn app:app `
+      --app-dir "<repo>\slip-gaji-ocr\service-api" `
+      --host 127.0.0.1 --port 8012
+
+  # Terminal C - Classifier lokal (port 8020) - menentukan jenis tiap dokumen
+  $env:Path = "C:\Program Files\Tesseract-OCR;" + $env:Path
+  & "<repo>\.venv\Scripts\python.exe" -m uvicorn classifier_app:app `
+      --app-dir "<repo>\local_classifier" `
+      --host 127.0.0.1 --port 8020
+
+  Cek sehat:
+    http://127.0.0.1:8011/health   -> {"status":"ok",...}   (SK)
+    http://127.0.0.1:8012/health   -> {"status":"ok",...}   (Slip)
+    http://127.0.0.1:8020/health   -> {"status":"ok",...}   (Classifier)
+  UI bawaan service (opsional): /web , dokumentasi API: /docs
+
+--------------------------------------------------------------------------
+2) JALANKAN APLIKASI NEXT.JS
+--------------------------------------------------------------------------
+  cd "<repo>\nilam-prototype"
+  npm run dev
+  Buka: http://localhost:3000  (atau port yang tampil di terminal)
+
+--------------------------------------------------------------------------
+3) KONFIGURASI URL SERVICE (opsional)
+--------------------------------------------------------------------------
+  Default sudah benar (8011 & 8012). Untuk override, buat file
+  nilam-prototype\.env.local :
+      SK_OCR_URL=http://127.0.0.1:8011
+      SLIP_GAJI_OCR_URL=http://127.0.0.1:8012
+
+--------------------------------------------------------------------------
+4) UJI CEPAT (tanpa UI)
+--------------------------------------------------------------------------
+  curl.exe -X POST "http://127.0.0.1:8012/parse" -F "files=@C:\path\slip.pdf"
+  curl.exe -X POST "http://127.0.0.1:8011/parse" -F "files=@C:\path\sk.pdf"
+
+--------------------------------------------------------------------------
+CATATAN
+--------------------------------------------------------------------------
+  - Mode RULE-BASED (tanpa LLM). Untuk mengaktifkan LLM, isi file .env di
+    masing-masing folder service (lihat .env.example) lalu restart service.
+  - Hanya file PDF yang diterima service.
+  - Jika service mati, UI menampilkan error "service ... tidak dapat dihubungi";
+    dokumen lain (KTP/KK/Bank) tetap bisa lewat simulasi.
+==========================================================================

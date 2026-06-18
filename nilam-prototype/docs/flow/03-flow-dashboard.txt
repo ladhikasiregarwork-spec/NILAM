@@ -1,0 +1,63 @@
+==========================================================================
+ 03 - FLOW DASHBOARD (CANVAS KANAN)
+==========================================================================
+
+Dashboard = tumpukan vertikal (bisa scroll). Urutan section:
+
+  [A] DATA ALREADY UPLOAD      strip status 5 dokumen
+  [B] KTP INFO | KK INFO | SK PERUSAHAAN
+  [C] SALARY SLIP
+  [D] BANK STATEMENT           tabel per bulan
+  [E] SLIK OJK                 daftar pinjaman
+  [F] CALCULATE INSTALLMENT    perhitungan angsuran
+
+File: components/dashboard/DocumentDashboard.tsx (+ kartu masing-masing)
+
+--------------------------------------------------------------------------
+ATURAN STATUS DOKUMEN (penting)
+--------------------------------------------------------------------------
+  Status tiap dokumen dihitung di data/documents.ts -> deriveDocumentStatuses:
+    - BELUM diupload          -> "pending"   (tidak akan pernah "completed")
+    - Diupload + node selesai -> "completed"
+    - Diupload + node jalan   -> "processing"
+  Jadi dokumen yang belum diunggah SELALU tampil "belum diunggah",
+  walau pipeline sudah jalan.
+
+--------------------------------------------------------------------------
+[A] DATA ALREADY UPLOAD (UploadedDocsStrip)
+    - 5 tile dokumen. Hijau "Completed", biru "Processing",
+      amber "Belum Upload".
+
+[B] KTP / KK / SK PERUSAHAAN
+    - KTP & KK: data mock (CUSTOMER_PROFILE, KK_INFO). Tampil "belum diunggah"
+      jika dokumen terkait tidak diupload.
+    - SK PERUSAHAAN (EmploymentAgreementCard):
+        * Jika ada hasil OCR (state.ocr.skPerusahaan): pakai field ASLI
+          (perusahaan, jabatan, status, masa kerja, tanggal kontrak) +
+          badge "Hasil OCR". Field yang tak terbaca -> pakai nilai mock.
+        * Jika tidak ada: pakai EMPLOYMENT_AGREEMENT (mock).
+
+[C] SALARY SLIP (SalarySlipCard)
+    - Jika ada hasil OCR (state.ocr.slipGaji): tampil Gaji Pokok asli +
+      rincian Tunjangan / Potongan / Total Dibayar + badge "Hasil OCR".
+    - Jika tidak ada: tampil Gaji Pokok mock + komponen (Gaji/THR/Bonus/Insentif).
+
+[D] BANK STATEMENT (BankStatementTableCard)
+    - Tabel per bulan: Month, Salary, THR, Bonus, Incentive, Other Credits, Total
+      + baris total kolom. Sumber: data mock (BANK_STATEMENT_ROWS).
+
+[E] SLIK OJK (SlikOjkCard)
+    - Daftar fasilitas kredit + total angsuran + skor. Sumber: mock.
+
+[F] CALCULATE INSTALLMENT (InstallmentCard)
+    - Hitung "Maksimal Angsuran Baru" = (penghasilan tertimbang * DSR) -
+      angsuran berjalan SLIK. Sumber income: mock.
+
+--------------------------------------------------------------------------
+GATING (kapan section muncul)
+--------------------------------------------------------------------------
+  - Section dokumen (KTP..Bank) muncul saat node "ocr" success.
+  - SLIK OJK muncul saat node "slik" success.
+  - Installment muncul saat node "thp" success.
+  Sebelum itu: "Menunggu pemrosesan..." atau "belum diunggah" bila tak diupload.
+==========================================================================

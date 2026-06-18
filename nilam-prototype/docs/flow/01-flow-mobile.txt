@@ -1,0 +1,62 @@
+==========================================================================
+ 01 - FLOW APLIKASI MOBILE (SISI NASABAH)
+==========================================================================
+
+Aplikasi mobile (canvas kiri) memiliki 4 step. Stepper di bawah HP:
+  [1] Masuk  ->  [2] Upload Dokumen  ->  [3] Identifikasi  ->  [4] Feedback
+
+File terkait:
+  - hooks/useNilamFlow.ts                 (state machine + aksi upload OCR)
+  - engines/persona/personaEngine.ts      (planFlow: daftar step)
+  - components/mobile/MobileApp.tsx        (router antar screen)
+  - components/mobile/FlowStepper.tsx      (indikator step)
+  - components/mobile/screens/*.tsx        (tiap layar)
+
+--------------------------------------------------------------------------
+STEP 1 - MASUK (OpeningScreen)
+--------------------------------------------------------------------------
+  - Layar pembuka NILAM + tombol "Mulai".
+  - Aksi: start() -> dispatch "next" -> pindah ke step "requirement".
+
+--------------------------------------------------------------------------
+STEP 2 - UPLOAD DOKUMEN (RequirementScreen)
+--------------------------------------------------------------------------
+  Menampilkan 5 dokumen, SATU PER SATU (bukan satu tombol borongan):
+      1. KTP             (simulasi)
+      2. KK              (simulasi)
+      3. Slip Gaji       (UPLOAD PDF ASLI -> OCR)
+      4. Bank Statement  (simulasi)
+      5. SK Perusahaan   (UPLOAD PDF ASLI -> OCR)
+
+  Untuk dokumen SIMULASI (KTP, KK, Bank Statement):
+      - Tombol "Upload File" -> onUpload(id, true) -> status jadi "Terunggah".
+
+  Untuk dokumen OCR (Slip Gaji, SK Perusahaan):
+      - Tombol "Pilih PDF dari komputer" membuka file picker (accept=.pdf).
+      - File dikirim ke proxy Next.js -> service OCR (lihat 02-flow-ocr-integrasi.txt).
+      - Saat proses: tampil "Membaca isi dokumen..." (loading).
+      - Jika sukses: status "Terunggah" + preview hasil ekstraksi
+                     (mis. "Gaji Pokok: Rp..."; "PT ... . Jabatan").
+      - Jika gagal: pesan error merah (mis. service mati / bukan dokumen yang sesuai).
+
+  Tombol Submit:
+      - Aktif jika minimal 1 dokumen sudah diunggah.
+      - Dokumen yang belum diunggah TIDAK menghalangi submit, tapi ditandai
+        "belum diunggah" di dashboard.
+      - Submit -> delay singkat -> submit() -> pindah ke step "processing".
+
+--------------------------------------------------------------------------
+STEP 3 - IDENTIFIKASI (ProcessingScreen)
+--------------------------------------------------------------------------
+  - Tampil spinner "Mengidentifikasi data...".
+  - Di belakang layar, orchestrator menjalankan pipeline 8 node
+    (upload, ocr, validasi, fraud, identity, slik, income, thp) dengan
+    event running -> success. Ini yang membuka section di dashboard.
+  - Saat pipeline selesai -> pindah ke step "analyst_decision".
+
+--------------------------------------------------------------------------
+STEP 4 - FEEDBACK (AnalystDecisionScreen)
+--------------------------------------------------------------------------
+  - "Pengajuan Terkirim - Menunggu keputusan Credit Analyst" + nomor pengajuan.
+  - Tombol "Mulai aplikasi baru" -> reset() -> kembali ke step 1.
+==========================================================================

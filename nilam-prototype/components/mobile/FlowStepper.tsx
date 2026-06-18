@@ -14,20 +14,30 @@ interface StepNode {
 
 const NODES: StepNode[] = [
   { number: 1, label: "Masuk" },
-  { number: 2, label: "Upload", sublabel: "Dokumen" },
-  { number: 3, label: "Identi-", sublabel: "fikasi" },
-  { number: 4, label: "Feedback" },
+  { number: 2, label: "S&K" },
+  { number: 3, label: "Upload" },
+  { number: 4, label: "Data", sublabel: "Diri" },
+  { number: 5, label: "Agunan" },
+  { number: 6, label: "Proses" },
+  { number: 7, label: "Penawa-", sublabel: "ran" },
+  { number: 8, label: "Cair" },
 ];
 
-// Map currentStep → which node index (0-based) is "active"
-// Flow order: opening→1, requirement→2, processing→3, analyst_decision→4
+// Map currentStep → which node index (0-based) is "active".
 function getActiveIndex(step: FlowStep): number {
   switch (step) {
-    case "opening":           return 0;
-    case "requirement":       return 1;
-    case "processing":        return 2;
-    case "analyst_decision":  return 3;
-    default:                  return 0;
+    case "opening":         return 0;
+    case "term_condition":  return 1;
+    case "requirement":     return 2;
+    case "data_diri":       return 3;
+    case "agunan":          return 4;
+    case "processing":      return 5;
+    // Survey shares the "Proses" node — from the borrower's progress view the
+    // RM survey is part of the review/processing stage.
+    case "survey":          return 5;
+    case "offering":        return 6;
+    case "disburse":        return 7;
+    default:                return 0;
   }
 }
 

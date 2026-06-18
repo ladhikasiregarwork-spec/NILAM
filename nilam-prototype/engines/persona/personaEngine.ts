@@ -1,13 +1,15 @@
 import type { FlowStep, PersonaConfig } from "@/types/flow";
 
 /**
- * The customer flow (Image 1):
- *   opening (masuk aplikasi) → requirement (upload 5 dokumen)
- *   → processing (identifikasi data) → analyst_decision (menunggu feedback)
+ * The customer KPR flow:
+ *   opening → term_condition (S&K) → requirement (upload dokumen)
+ *   → data_diri (form data diri, prefilled dari OCR) → agunan → processing
+ *   → survey (hanya bila agunan ≥ Rp500jt — disurvey Relationship Manager)
+ *   → offering (penawaran KPR) → disburse (pencairan)
  *
- * Income-type and joint-income steps were removed: the document-upload flow is
- * single-applicant and document-centric.
+ * `survey` selalu ada di urutan agar bisa di-navigasi; untuk agunan < Rp500jt
+ * langkah ini dilewati (processing → offering langsung).
  */
 export function planFlow(_p?: PersonaConfig): FlowStep[] {
-  return ["opening", "requirement", "processing", "analyst_decision"];
+  return ["opening", "term_condition", "requirement", "data_diri", "agunan", "processing", "survey", "offering", "disburse"];
 }

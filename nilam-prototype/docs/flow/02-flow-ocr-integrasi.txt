@@ -1,0 +1,63 @@
+==========================================================================
+ 02 - FLOW UPLOAD DOKUMEN + INTEGRASI OCR (SLIP GAJI & SK PERUSAHAAN)
+==========================================================================
+
+Hanya 2 dokumen yang terhubung ke OCR asli:
+  - Slip Gaji      -> service "slip-gaji-ocr"       (FastAPI, port 8012)
+  - SK Perusahaan  -> service "keterangan-kerja-ocr" (FastAPI, port 8011)
+
+Diagram alur (per langkah):
+
+  [HP] RequirementScreen
+     |  user pilih file PDF dari komputer
+     v
+  (1) handleFile(docId, file)
+     |  panggil hook: uploadOcrDocument(docId, file)
+     v
+  (2) useNilamFlow.uploadOcrDocument()
+     |  FormData { file } -> POST ke proxy Next.js:
+     |     slip_gaji      -> /api/ocr/slip-gaji
+     |     sk_perusahaan  -> /api/ocr/sk-perusahaan
+     v
+  (3) ROUTE PROXY (server Next.js, runtime nodejs)
+     |  file di-forward sebagai field "files" ke FastAPI /parse:
+     |     slip-gaji      -> http://127.0.0.1:8012/parse
+     |     sk-perusahaan  -> http://127.0.0.1:8011/parse
+     |  (URL bisa di-override lewat env SLIP_GAJI_OCR_URL / SK_OCR_URL)
+     v
+  (4) FASTAPI SERVICE (Python, rule-based + Tesseract)
+     |  baca teks PDF (pypdfium2) / OCR (Tesseract jika hasil scan),
+     |  klasifikasi + ekstrak field, balas JSON { ok, summary, ... }
+     v
+  (5) ROUTE PROXY map JSON mentah -> bentuk rapi (lib/ocrMappers.ts):
+     |     SlipGajiExtract  { gajiPokok, tunjangan, potongan, totalDibayar, ... }
+     |     SkPerusahaanExtract { perusahaan, jabatan, statusKepegawaian,
+     |                           masaKerja, tanggalMulai, tanggalBerakhir, ... }
+     |  balas { ok:true, extract } ke browser
+     v
+  (6) hook simpan ke state: dispatch setOcr + setUpload(docId, true)
+     |  state.ocr.slipGaji / state.ocr.skPerusahaan terisi
+     v
+  (7) DASHBOARD memakai data asli (lihat 03-flow-dashboard.txt)
+
+File terkait:
+  - app/api/ocr/slip-gaji/route.ts        proxy slip gaji
+  - app/api/ocr/sk-perusahaan/route.ts    proxy SK perusahaan
+  - lib/ocrMappers.ts                     pemetaan JSON service -> bentuk UI
+  - types/ocrExtract.ts                   tipe SlipGajiExtract & SkPerusahaanExtract
+  - hooks/useNilamFlow.ts                 uploadOcrDocument() + state.ocr
+
+Penanganan error (route proxy):
+  - Bukan PDF                 -> 400 "Hanya file PDF yang didukung"
+  - Service tidak terhubung   -> 502 "...tidak dapat dihubungi di <url>"
+  - PDF terkunci password     -> 422 "PDF terkunci password"
+  - Bukan Surat Ket. Kerja    -> 422 "Dokumen tidak dikenali..." (khusus SK)
+  Pesan error muncul di kartu dokumen pada RequirementScreen (teks merah).
+
+Catatan mode RULE-BASED (tanpa LLM):
+  - keterangan-kerja: jalan via aturan; LLM hanya dipakai jika field wajib
+    kosong DAN kredensial tersedia. Tanpa kredensial -> tetap rule-based.
+  - slip-gaji: ekstraksi berbasis aturan + Tesseract; beberapa field bisa
+    kosong untuk PDF non-standar. Field kosong di dashboard tampil "-" atau
+    memakai nilai mock sebagai cadangan.
+==========================================================================

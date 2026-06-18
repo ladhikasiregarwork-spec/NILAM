@@ -105,4 +105,23 @@ export interface SlikLoan {
   status: string;
   /** Collectibility class 1..5 (kolektibilitas). */
   kualitas: number;
+  /** Interest rate p.a. in percent (e.g. 8.25). */
+  sukuBunga?: number;
+  /** Start date "YYYYMMDD". */
+  tanggalMulai?: string;
+  /** Maturity date "YYYYMMDD". */
+  tanggalJatuhTempo?: string;
+  /** True when the facility is still active (kondisi 0); false = lunas/non-aktif. */
+  aktif?: boolean;
+}
+
+/** Parsed SLIK report (from the SLIK CSV), keyed by NIK. */
+export interface SlikReport {
+  nik: string;
+  namaDebitur?: string;
+  loans: SlikLoan[];
+  totalAngsuran: number;
+  /** Worst collectibility across facilities (1 best … 5 macet). */
+  kolekTerburuk: number;
+  totalFasilitas: number;
 }

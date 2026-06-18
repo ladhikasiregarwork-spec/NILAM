@@ -23,9 +23,11 @@ export function ProcessingScreen() {
         <div className="h-3 w-3 rounded-full bg-bri-navy opacity-70" />
       </div>
 
-      <div className="text-center">
-        <p className="text-sm font-semibold text-bri-ink">Mengidentifikasi data…</p>
-        <p className="mt-0.5 text-[9px] text-bri-muted">Membaca dokumen yang diunggah</p>
+      <div className="max-w-[230px] text-center">
+        <p className="text-[13px] font-semibold text-bri-ink">Pengajuan Anda sedang kami proses</p>
+        <p className="mt-1 text-[10px] leading-relaxed text-bri-muted">
+          Silakan menunggu, petugas kami akan menghubungi Anda dalam waktu dekat.
+        </p>
       </div>
     </div>
   );
