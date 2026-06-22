@@ -9,6 +9,7 @@ from nilam_backend.services.fraud.router import router as fraud_router
 from nilam_backend.services.identity.router import router as identity_router
 from nilam_backend.services.income.router import router as income_router
 from nilam_backend.services.matching.router import router as matching_router
+from nilam_backend.services.ocr_facade.router import router as ocr_facade_router
 from nilam_backend.services.offering.router import router as offering_router
 from nilam_backend.services.orchestration.router import router as orchestration_router
 from nilam_backend.services.plafond.router import router as plafond_router
@@ -36,3 +37,4 @@ app.include_router(identity_router)
 app.include_router(slik_router)
 app.include_router(orchestration_router)
 app.include_router(survey_router)
+app.include_router(ocr_facade_router)
